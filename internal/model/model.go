@@ -1,0 +1,113 @@
+package model
+
+import (
+	"time"
+	"gorm.io/gorm"
+)
+
+const SuperAdminID = 1
+
+type Channel struct {
+	ID            uint       `gorm:"primaryKey" json:"id"`
+	Name          string     `json:"name"`
+	Type          string     `json:"type"`
+	BaseURL       string     `gorm:"column:base_url" json:"base_url"`
+	APIKey        string     `gorm:"column:api_key" json:"api_key"`
+	Models        string     `json:"models"`
+	ModelMapping  string     `gorm:"column:model_mapping" json:"model_mapping"`
+	AllowedGroups string     `gorm:"column:allowed_groups" json:"allowed_groups"`
+	Weight        int        `json:"weight"`
+	Priority      int        `json:"priority"`
+	Enabled       bool       `json:"enabled"`
+	AutoBan       bool       `gorm:"column:auto_ban" json:"auto_ban"`
+	FailCount     int        `gorm:"column:fail_count" json:"fail_count"`
+	TestTime      *time.Time `gorm:"column:test_time" json:"test_time"`
+	ResponseTime  int        `gorm:"column:response_time" json:"response_time"`
+	CreatedAt     time.Time  `json:"created_at"`
+}
+
+func (Channel) TableName() string { return "channels" }
+
+type User struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	Username       string    `gorm:"uniqueIndex" json:"username"`
+	PasswordHash   string    `gorm:"column:password_hash" json:"-"`
+	Role           string    `gorm:"default:user" json:"role"`
+	GroupID        *uint     `gorm:"column:group_id" json:"group_id"`
+	Enabled        bool      `gorm:"default:true" json:"enabled"`
+	MaxTokens      int       `gorm:"column:max_tokens;default:3" json:"max_tokens"`
+	TokenQuota     int64     `gorm:"column:token_quota;default:-1" json:"token_quota"`
+	TokenQuotaUsed int64     `gorm:"column:token_quota_used;default:0" json:"token_quota_used"`
+	AllowedModels  string    `gorm:"column:allowed_models" json:"allowed_models"`
+	RateMode       string    `gorm:"column:rate_mode;default:'inherit'" json:"rate_mode"` // inherit|global|per_model
+	RPM            int       `gorm:"column:rpm;default:0" json:"rpm"`   // 0 = use global limit
+	TPM            int64     `gorm:"column:tpm;default:0" json:"tpm"`   // 0 = use global limit
+	ModelRateLimits string `gorm:"column:model_rate_limits;type:text" json:"model_rate_limits"` // JSON: {"gpt-4":{"rpm":5,"tpm":10000},"*":{"rpm":10}}
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+func (User) TableName() string { return "users" }
+
+type Token struct {
+	ID         uint       `gorm:"primaryKey" json:"id"`
+	UserID     uint       `gorm:"column:user_id;index" json:"user_id"`
+	Name       string     `json:"name"`
+	Key        string     `gorm:"uniqueIndex" json:"key"`
+	Models     string     `json:"models"`
+	Enabled    bool       `gorm:"default:true" json:"enabled"`
+	QuotaLimit int64      `gorm:"column:quota_limit;default:-1" json:"quota_limit"`
+	QuotaUsed  int64      `gorm:"column:quota_used;default:0" json:"quota_used"`
+	ExpiresAt  *time.Time `gorm:"column:expires_at" json:"expires_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+func (Token) TableName() string { return "tokens" }
+
+type Group struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Name      string    `gorm:"uniqueIndex" json:"name"`
+	Comment   string    `json:"comment"`
+	RateMode       string    `gorm:"column:rate_mode;default:'global'" json:"rate_mode"` // global|per_model
+	RPM       int       `gorm:"column:rpm;default:0" json:"rpm"`   // 0=global, -1=unlimited
+	TPM       int64     `gorm:"column:tpm;default:0" json:"tpm"`   // 0=global, -1=unlimited
+	ModelRateLimits string `gorm:"column:model_rate_limits;type:text" json:"model_rate_limits"` // JSON: {"gpt-4":{"rpm":5,"tpm":10000},"*":{"rpm":10}}
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (Group) TableName() string { return "groups" }
+
+type Log struct {
+	ID               uint      `gorm:"primaryKey" json:"id"`
+	UserID           uint      `gorm:"column:user_id;index" json:"user_id"`
+	TokenID          uint      `gorm:"column:token_id;index" json:"token_id"`
+		TokenName        string    `gorm:"column:token_name" json:"token_name"`
+	ChannelID        uint      `gorm:"column:channel_id;index" json:"channel_id"`
+	ChannelName      string    `gorm:"column:channel_name" json:"channel_name"`
+	Model            string    `gorm:"index" json:"model"`
+	IsStream         bool      `gorm:"column:is_stream" json:"is_stream"`
+	PromptTokens     int64     `gorm:"column:prompt_tokens" json:"prompt_tokens"`
+	CompletionTokens int64     `gorm:"column:completion_tokens" json:"completion_tokens"`
+	LatencyMs        int       `gorm:"column:latency_ms" json:"latency_ms"`
+	Success          bool      `json:"success"`
+	ErrorMsg         string    `gorm:"column:error_msg;type:text" json:"error_msg"`
+	ClientIP         string    `gorm:"column:client_ip" json:"client_ip"`
+	CreatedAt        time.Time `gorm:"index" json:"created_at"`
+}
+
+func (Log) TableName() string { return "logs" }
+
+type Notification struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	SenderID   uint      `gorm:"column:sender_id;index" json:"sender_id"`
+	ReceiverID *uint     `gorm:"column:receiver_id;index" json:"receiver_id"`
+	Title      string    `json:"title"`
+	Content    string    `gorm:"type:text" json:"content"`
+	Category   string    `gorm:"default:info" json:"category"`
+	Read       bool      `gorm:"default:false" json:"read"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+func (Notification) TableName() string { return "notifications" }
+
+// DB global instance
+var DB *gorm.DB

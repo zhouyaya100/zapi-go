@@ -1,0 +1,246 @@
+<div v-if="tab==='settings' && isSuperAdmin" class="max-w-5xl">
+  <h2 class="text-xl font-bold text-gray-800 mb-6">⚙️ {{t('sysSettings')}}</h2>
+  <div class="space-y-5">
+
+  <!-- Security -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div class="bg-gradient-to-r from-indigo-50 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">🔒</span>
+<span class="font-semibold text-indigo-700 text-sm">{{t('secSettings')}}</span>
+</div>
+    <div class="p-5 grid grid-cols-3 gap-x-8 gap-y-4">
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('jwtExpire')}}</label>
+        <div class="flex items-center gap-1">
+<input v-model.number="sysSet.jwt_expire_hours" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition">
+<span class="text-xs text-gray-400">h</span>
+</div>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('corsOrigins')}}</label>
+        <input v-model="sysSet.cors_origins" type="text" placeholder="*" class="w-full px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('minPwdLen')}}</label>
+        <div class="flex items-center gap-1">
+<input v-model.number="sysSet.min_password_length" type="number" min="6" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition">
+<span class="text-xs text-gray-400">位</span>
+</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Proxy -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div class="bg-gradient-to-r from-blue-50 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">🌐</span>
+<span class="font-semibold text-blue-700 text-sm">{{t('proxySettings')}}</span>
+</div>
+    <div class="p-5 grid grid-cols-5 gap-x-6 gap-y-4">
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('proxyTimeout')}}</label>
+        <div class="flex items-center gap-1">
+<input v-model.number="sysSet.proxy_timeout" type="number" min="5" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none transition">
+<span class="text-xs text-gray-400">s</span>
+</div>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('proxyMaxConn')}}</label>
+        <input v-model.number="sysSet.proxy_max_connections" type="number" min="1" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none transition">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('proxyMaxKeepalive')}}</label>
+        <input v-model.number="sysSet.proxy_max_keepalive" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none transition">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('proxyKeepaliveExp')}}</label>
+        <div class="flex items-center gap-1">
+<input v-model.number="sysSet.proxy_keepalive_expiry" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none transition">
+<span class="text-xs text-gray-400">s</span>
+</div>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('proxyRetry')}}</label>
+        <input v-model.number="sysSet.proxy_retry_count" type="number" min="0" max="5" class="w-16 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none transition">
+      </div>
+    </div>
+  </div>
+
+  <!-- Cache -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div class="bg-gradient-to-r from-amber-50 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">⚡</span>
+<span class="font-semibold text-amber-700 text-sm">{{t('cacheSettings')}}</span>
+</div>
+    <div class="p-5 grid grid-cols-3 gap-x-8 gap-y-4">
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('cacheEnabled')}}</label>
+        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+<input type="checkbox" v-model="sysSet.cache_enabled" class="rounded text-indigo-600 w-4 h-4">
+<span class="text-sm" :class="sysSet.cache_enabled?'text-green-600 font-medium':'text-gray-400'">{{sysSet.cache_enabled?t('open'):t('closed')}}</span>
+</label>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('cacheTTL')}}</label>
+        <div class="flex items-center gap-1">
+<input v-model.number="sysSet.cache_ttl" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-amber-200 focus:border-amber-400 outline-none transition">
+<span class="text-xs text-gray-400">s</span>
+</div>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('cacheMaxEntries')}}</label>
+        <input v-model.number="sysSet.cache_max_entries" type="number" min="100" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-amber-200 focus:border-amber-400 outline-none transition">
+      </div>
+    </div>
+  </div>
+
+  <!-- Rate Limit -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div class="bg-gradient-to-r from-rose-50 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">🚦</span>
+<span class="font-semibold text-rose-700 text-sm">{{t('rateLimitSettings')}}</span>
+</div>
+    <div class="p-5 grid grid-cols-3 gap-x-8 gap-y-4">
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('rateLimitEnabled')}}</label>
+        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+<input type="checkbox" v-model="sysSet.rate_limit_enabled" class="rounded text-indigo-600 w-4 h-4">
+<span class="text-sm" :class="sysSet.rate_limit_enabled?'text-green-600 font-medium':'text-gray-400'">{{sysSet.rate_limit_enabled?t('open'):t('closed')}}</span>
+</label>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('rateLimitRpm')}}</label>
+        <input v-model.number="sysSet.rate_limit_rpm" type="number" min="1" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-rose-200 focus:border-rose-400 outline-none transition">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('rateLimitIpRpm')}}</label>
+        <input v-model.number="sysSet.rate_limit_ip_rpm" type="number" min="1" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-rose-200 focus:border-rose-400 outline-none transition">
+      </div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div class="bg-gradient-to-r from-emerald-50 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">📋</span>
+<span class="font-semibold text-emerald-700 text-sm">{{t('logSettings')}}</span>
+</div>
+    <div class="p-5">
+      <div class="grid grid-cols-3 gap-x-8 gap-y-4 mb-4">
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('logBatchSize')}}</label>
+          <input v-model.number="sysSet.log_batch_size" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('logBatchInterval')}}</label>
+          <div class="flex items-center gap-1">
+<input v-model.number="sysSet.log_batch_interval" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+<span class="text-xs text-gray-400">s</span>
+</div>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('logRetention')}}</label>
+          <div class="flex items-center gap-1">
+<input v-model.number="sysSet.log_retention_days" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+<span class="text-xs text-gray-400">天</span>
+</div>
+        </div>
+      </div>
+      <div class="border-t pt-4 grid grid-cols-3 gap-x-8 gap-y-4">
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('logCleanupInterval')}}</label>
+          <div class="flex items-center gap-1">
+<input v-model.number="sysSet.log_cleanup_interval_hours" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+<span class="text-xs text-gray-400">h</span>
+</div>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('logCleanupBatch')}}</label>
+          <input v-model.number="sysSet.log_cleanup_batch_size" type="number" min="100" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('errorLogMax')}}</label>
+          <input v-model.number="sysSet.error_log_max_entries" type="number" min="100" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('errorLogMaxDays')}}</label>
+          <input v-model.number="sysSet.error_log_max_days" type="number" min="1" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Registration -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div class="bg-gradient-to-r from-violet-50 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">👤</span>
+<span class="font-semibold text-violet-700 text-sm">{{t('regSettings')}}</span>
+</div>
+    <div class="p-5 grid grid-cols-4 gap-x-8 gap-y-4">
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('allowRegister')}}</label>
+        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+<input type="checkbox" v-model="sysSet.allow_register" class="rounded text-indigo-600 w-4 h-4">
+<span class="text-sm" :class="sysSet.allow_register?'text-green-600 font-medium':'text-gray-400'">{{sysSet.allow_register?t('open'):t('closed')}}</span>
+</label>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('defMaxTokens')}}</label>
+        <input v-model.number="sysSet.default_max_tokens" type="number" min="0" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-violet-200 focus:border-violet-400 outline-none transition">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('defTokenQuota')}}</label>
+        <input v-model.number="sysSet.default_token_quota" type="number" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-violet-200 focus:border-violet-400 outline-none transition">
+        <span class="text-xs text-gray-300 ml-1">(-1=∞)</span>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('defGroup')}}</label>
+        <select v-model="sysSet.default_group" class="px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-violet-200 focus:border-violet-400 outline-none transition">
+<option value="">--</option>
+<option v-for="g in sysSet.groups" :key="g.id" :value="g.name">{{g.name}}</option>
+</select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Read-only -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden opacity-60">
+    <div class="bg-gradient-to-r from-gray-100 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">🔒</span>
+<span class="font-semibold text-[#8b949e] text-sm">{{t('readonlySettings')}} <span class="text-xs font-normal text-gray-400 ml-2">{{t('readonlyCfg')}}</span>
+</span>
+</div>
+    <div class="p-5 grid grid-cols-5 gap-x-6 gap-y-4">
+      <div>
+        <label class="text-xs font-medium text-gray-400 block mb-1.5">{{t('serverHost')}}</label>
+        <input :value="sysSet.server_host" type="text" disabled class="w-full px-2.5 py-1.5 rounded-lg border text-sm bg-gray-50 cursor-not-allowed">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-400 block mb-1.5">{{t('serverPort')}}</label>
+        <input :value="sysSet.server_port" type="number" disabled class="w-20 px-2.5 py-1.5 rounded-lg border text-sm bg-gray-50 cursor-not-allowed">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-400 block mb-1.5">{{t('serverWorkers')}}</label>
+        <input :value="sysSet.server_workers" type="number" disabled class="w-16 px-2.5 py-1.5 rounded-lg border text-sm bg-gray-50 cursor-not-allowed">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-400 block mb-1.5">{{t('timezoneOffset')}}</label>
+        <input v-model.number="sysSet.timezone_offset" type="number" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-400 block mb-1.5">{{t('dbPool')}}</label>
+        <input :value="sysSet.db_pool_size" type="number" disabled class="w-20 px-2.5 py-1.5 rounded-lg border text-sm bg-gray-50 cursor-not-allowed">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-400 block mb-1.5">{{t('dbOverflow')}}</label>
+        <input :value="sysSet.db_max_overflow" type="number" disabled class="w-20 px-2.5 py-1.5 rounded-lg border text-sm bg-gray-50 cursor-not-allowed">
+      </div>
+    </div>
+  </div>
+
+  </div>
+<!-- end space-y-5 -->
+  <div class="mt-6 flex justify-end">
+<button @click="saveSettings" class="px-8 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm hover:shadow">💾 {{t('save')}}</button>
+</div>
+</div>

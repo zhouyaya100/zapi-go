@@ -1,0 +1,1811 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Zapi</title>
+<script src="/static/tailwind.js"></script><script src="/static/vue.global.prod.js"></script><script src="/static/chart.umd.min.js"></script>
+<style>[v-cloak]{display:none}.fade-in{animation:fadeIn .2s ease-in}@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}.toast-enter{animation:toastIn .3s ease}@keyframes toastIn{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}.line-clamp-2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}@media(max-width:768px){.sidebar{position:fixed;left:-280px;top:0;bottom:0;z-index:40;transition:left .3s ease}.sidebar.open{left:0}.sidebar-overlay{display:none}.sidebar-overlay.open{display:block;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:35}}@media(min-width:769px){.sidebar{height:100vh;overflow-y:auto;position:sticky;top:0;scrollbar-width:thin}}</style></head>
+<body class="bg-slate-50 h-screen overflow-hidden font-sans text-gray-800"><div id="app" v-cloak>
+<div v-if="toastMsg" class="fixed top-4 right-4 z-[999] bg-gray-800 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-medium toast-enter flex items-center gap-2"><span class="text-[#7ee787]">✓</span> {{toastMsg}}</div>
+<div v-if="!authed" class="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600">
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-8">
+      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/20 backdrop-blur mb-4">
+<span class="text-3xl">⚡</span>
+</div>
+      <h1 class="text-3xl font-bold text-white">Zapi</h1>
+      <p class="text-indigo-200 mt-1">统一模型管理工具</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow-xl p-6">
+      <div v-if="authMode==='login'">
+        <div class="space-y-3">
+          <input v-model="loginForm.username" class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm" :placeholder="t('username')" @keyup.enter="doLogin">
+          <input v-model="loginForm.password" type="password" class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm" :placeholder="t('password')" @keyup.enter="doLogin">
+          <div class="flex gap-2 items-center">
+            <input v-model="loginForm.captchaCode" class="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm" :placeholder="t('captchaCode')" @keyup.enter="doLogin">
+            <img :src="captchaImg" @click="refreshCaptcha" class="h-10 rounded-lg cursor-pointer border border-gray-200 hover:border-indigo-300 transition" :title="t('clickRefresh')">
+          </div>
+        </div>
+        <div v-if="authError" class="mt-2 text-red-500 text-xs">{{authError}}</div>
+        <button @click="doLogin" class="w-full mt-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm transition">{{t('login')}}</button>
+        <div class="mt-3 text-center">
+<button @click="authMode='register';refreshCaptcha()" class="text-xs text-indigo-500 hover:underline">{{t('goRegister')}}</button>
+</div>
+      </div>
+      <div v-else>
+        <div v-if="!regOpen" class="p-4 bg-red-50 rounded-xl text-sm text-red-600 text-center mb-3">{{t('regClosed')}}</div>
+        <template v-else>
+        <div class="space-y-3">
+          <input v-model="regForm.username" class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm" :placeholder="t('username')">
+          <input v-model="regForm.password" type="password" class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm" :placeholder="t('password')">
+          <input v-model="regForm.password2" type="password" class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm" :placeholder="t('confirmPwd')">
+          <div class="flex gap-2 items-center">
+            <input v-model="regForm.captchaCode" class="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm" :placeholder="t('captchaCode')">
+            <img :src="captchaImg" @click="refreshCaptcha" class="h-10 rounded-lg cursor-pointer border border-gray-200 hover:border-indigo-300 transition" :title="t('clickRefresh')">
+          </div>
+        </div>
+        <div v-if="authError" class="mt-2 text-red-500 text-xs">{{authError}}</div>
+        <button @click="doRegister" class="w-full mt-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm transition">{{t('register')}}</button>
+        <div class="mt-3 text-center">
+<button @click="authMode='login';refreshCaptcha()" class="text-xs text-indigo-500 hover:underline">{{t('goLogin')}}</button>
+</div>
+        </template>
+      </div>
+    </div>
+    <p class="text-center text-xs text-indigo-300 mt-4">Zapi v{{appVersion}}</p>
+  </div>
+</div>
+<div v-else class="flex h-screen overflow-hidden">
+<button @click="sidebarOpen=!sidebarOpen" class="md:hidden fixed top-4 left-4 z-50 bg-white rounded-xl p-2 shadow-lg border"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+<div :class="['sidebar-overlay',sidebarOpen?'open':'']" @click="sidebarOpen=false"></div>
+<nav :class="['sidebar w-56 bg-white border-r border-gray-100 flex flex-col shrink-0',sidebarOpen?'open':'']">
+  <div class="p-5 border-b border-gray-100">
+    <div class="flex items-center gap-2">
+<span class="text-xl">⚡</span>
+<span class="font-bold text-lg text-indigo-600">Zapi</span>
+</div>
+    <div class="text-xs text-gray-400 mt-1" v-if="currentUser">{{currentUser.username}} <span class="text-indigo-400">({{currentUser.role}})</span>
+</div>
+  </div>
+  <div class="flex-1 p-3 space-y-1">
+    <template v-if="isAdmin">
+      <button v-for="(icon,key) in {dashboard:'📊',channels:'🔌',groups:'🏷️',users:'👥',tokens:'🔑',logs:'📋',usage:'📈',myTokens:'🔑',myUsage:'📈',notifications:'🔔'}" :key="key" @click="tab=key;sidebarOpen=false" :class="['w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition',tab===key?'bg-indigo-50 text-indigo-700':'text-[#8b949e] hover:bg-gray-50']">
+<span>{{icon}}</span>
+<span>{{t(key)}}</span>
+<span v-if="key==='notifications' && unreadCount>0" class="ml-auto bg-red-500 text-white text-xs rounded-full px-1.5 min-w-[20px] text-center">{{unreadCount>99?'99+':unreadCount}}</span>
+</button>
+      <button v-if="isSuperAdmin" @click="tab='settings';sidebarOpen=false" :class="['w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition',tab==='settings'?'bg-indigo-50 text-indigo-700':'text-[#8b949e] hover:bg-gray-50']">
+<span>⚙️</span>
+<span>{{t('settings')}}</span>
+</button>
+      <button @click="tab='guide';sidebarOpen=false" :class="['w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition',tab==='guide'?'bg-indigo-50 text-indigo-700':'text-[#8b949e] hover:bg-gray-50']">
+<span>📖</span>
+<span>{{t('guide')}}</span>
+</button>
+    </template>
+    <template v-else-if="isOperator">
+      <button v-for="(icon,key) in {dashboard:'📊',logs:'📋',usage:'📈',myTokens:'🔑',myUsage:'📈',notifications:'🔔',guide:'📖'}" :key="key" @click="tab=key;sidebarOpen=false" :class="['w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition',tab===key?'bg-indigo-50 text-indigo-700':'text-[#8b949e] hover:bg-gray-50']">
+<span>{{icon}}</span>
+<span>{{t(key)}}</span>
+<span v-if="key==='notifications' && unreadCount>0" class="ml-auto bg-red-500 text-white text-xs rounded-full px-1.5 min-w-[20px] text-center">{{unreadCount>99?'99+':unreadCount}}</span>
+</button>
+    </template>
+    <template v-else>
+      <button v-for="(icon,key) in {dashboard:'📊',myTokens:'🔑',myUsage:'📈',notifications:'🔔',guide:'📖'}" :key="key" @click="tab=key;sidebarOpen=false" :class="['w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition',tab===key?'bg-indigo-50 text-indigo-700':'text-[#8b949e] hover:bg-gray-50']">
+<span>{{icon}}</span>
+<span>{{t(key)}}</span>
+<span v-if="key==='notifications' && unreadCount>0" class="ml-auto bg-red-500 text-white text-xs rounded-full px-1.5 min-w-[20px] text-center">{{unreadCount>99?'99+':unreadCount}}</span>
+</button>
+    </template>
+  </div>
+  <div class="p-3 border-t border-gray-100 space-y-1">
+    <button @click="showChangePwd=true" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition">
+<span>🔒</span>
+<span>{{t('changePwd')}}</span>
+</button>
+    <button @click="toggleLang" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition">
+<span>🌐</span>
+<span>{{lang==='zh'?'中文':'English'}}</span>
+</button>
+    <button @click="logout" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-400 hover:text-red-500 hover:bg-red-50 transition">
+<span>🚪</span>
+<span>{{t('logout')}}</span>
+</button>
+  </div>
+</nav>
+<main class="flex-1 flex flex-col overflow-hidden">
+<div class="flex items-center justify-end px-6 py-1 bg-white/60 border-b border-gray-100"><span class="text-xs text-gray-400">v{{version}}</span></div>
+<div class="flex-1 p-6 overflow-auto">
+<div class="max-w-5xl w-full mx-auto space-y-6 fade-in" :key="tab">
+<div v-if="showResetPwd" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" @click.self="showResetPwd=false">
+  <div class="bg-white rounded-2xl p-6 w-96 shadow-xl">
+    <h3 class="font-bold text-gray-800 mb-4">{{t('resetPwd')}} - {{resetPwdUser?.username}}</h3>
+    <div v-if="resetPwdResult" class="p-3 bg-green-50 border border-green-100 rounded-lg text-sm text-green-700 mb-3">
+      <div class="font-medium mb-1">{{t('pwdResetTo')}}:</div>
+      <div class="font-mono text-lg bg-white p-2 rounded border">{{resetPwdResult}}</div>
+      <button @click="copyKey(resetPwdResult)" class="mt-2 px-3 py-1 rounded-md bg-green-100 text-green-700 text-xs font-medium hover:bg-green-200 transition">{{t('copy')}}</button>
+    </div>
+    <div v-else class="text-sm text-[#8b949e] mb-3">{{t('deleteConfirm')}}</div>
+    <div class="flex gap-2">
+      <button v-if="!resetPwdResult" @click="doResetPwd" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium">{{t('confirm')}}</button>
+      <button @click="showResetPwd=false;resetPwdResult=''" class="flex-1 py-2 rounded-lg border text-sm">{{t('cancel')}}</button>
+    </div>
+  </div>
+</div>
+<div v-if="showChangePwd" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" @click.self="showChangePwd=false">
+  <div class="bg-white rounded-2xl p-6 w-96 shadow-xl">
+    <h3 class="font-bold text-gray-800 mb-4">{{t('changePwd')}}</h3>
+    <div class="space-y-3">
+      <input v-model="pwdForm.old_password" type="password" class="w-full px-3 py-2 rounded-lg border text-sm" :placeholder="t('oldPwd')">
+      <input v-model="pwdForm.new_password" type="password" class="w-full px-3 py-2 rounded-lg border text-sm" :placeholder="t('newPwd')">
+    </div>
+    <div v-if="pwdMsg" :class="['mt-2 text-xs',pwdOk?'text-green-600':'text-red-500']">{{pwdMsg}}</div>
+    <div class="mt-4 flex gap-2">
+      <button @click="showChangePwd=false" class="flex-1 py-2 rounded-lg border text-sm">{{t('cancel')}}</button>
+      <button @click="changePwd" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium">{{t('confirm')}}</button>
+    </div>
+  </div>
+</div>
+<div v-if="tab==='dashboard' && !isAdmin">
+  <h2 class="text-xl font-bold text-gray-800 mb-6">📊 {{t('dashboard')}}</h2>
+  <div v-if="!userDash.group_name" class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-sm text-amber-700 flex items-center gap-2">⚠️ {{t('noGroupWarn')}}</div>
+  <!-- Stats Cards -->
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-5">
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('tokenCountQuota')}}</div>
+<div class="text-2xl font-bold text-indigo-600">{{userDash.token_count||0}}<span class="text-base text-gray-300 font-normal"> / {{userDash.max_tokens===999?'∞':userDash.max_tokens}}</span></div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('tokenUsageQuota')}}</div>
+<div class="text-2xl font-bold" :class="userDash.token_quota===-1||userDash.token_quota==='-1'?'':'text-gray-800'">
+<span v-if="userDash.token_quota===-1||userDash.token_quota==='-1'" class="text-xs bg-purple-50 text-purple-500 px-2.5 py-1 rounded-lg ring-1 ring-purple-200 font-medium">∞ 不限量</span>
+<span v-else>{{formatNum(userDash.token_quota)}}</span>
+</div>
+<div v-if="userDash.token_quota!==-1&&userDash.token_quota!=='-1'" class="mt-2">
+<div class="flex items-center justify-between text-xs text-gray-400 mb-1">
+<span>已用 {{formatNum(userDash.token_quota_used)}}</span>
+<span>{{t('quotaRemaining')}} {{formatNum(bigSub(userDash.token_quota,userDash.token_quota_used))}}</span>
+</div>
+<div class="w-full bg-gray-100 rounded-full h-2">
+<div class="bg-gradient-to-r from-purple-400 to-pink-500 rounded-full h-2 transition-all" :style="{width:Math.min(100,Number(userDash.token_quota_used)/Number(userDash.token_quota)*100)+'%'}"></div>
+</div>
+</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('group')}}</div>
+<div class="text-2xl font-bold text-blue-600">{{userDash.group_name||'--'}}</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('inputTokens')}}</div>
+<div class="text-2xl font-bold text-emerald-600">{{formatNum(userDash.total_prompt_tokens||0)}}</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('outputTokens')}}</div>
+<div class="text-2xl font-bold text-amber-600">{{formatNum(userDash.total_completion_tokens||0)}}</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">RPM / TPM</div>
+<div class="flex items-baseline gap-1"><span class="text-xl font-bold text-cyan-600">{{userDash.rpm===-1?'∞':(userDash.rpm===0?'无额度':userDash.rpm)}}</span><span class="text-xs text-gray-300">/</span><span class="text-xl font-bold text-violet-600">{{userDash.tpm===-1?'∞':(userDash.tpm===0?'无额度':formatNum(userDash.tpm))}}</span></div>
+<div class="text-xs text-gray-300 mt-1">{{userDash.rate_mode==='inherit'?'继承分组':(userDash.rpm===-1?'不限制':(userDash.rpm===0?'已禁用':'每分钟'))}}</div>
+</div>
+  </div>
+  <!-- Model Rate Limits -->
+  <div v-if="userDash.model_limits && Object.keys(userDash.model_limits).length" class="bg-white rounded-xl border shadow-sm p-5 mb-5">
+    <div class="text-xs font-medium text-gray-400 mb-3">模型访问策略 <span v-if="userDash.rate_mode==='inherit'" class="text-indigo-400">· 继承自「{{userDash.group_name}}」分组</span></div>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+      <div v-for="(lim,m) in userDash.model_limits" :key="m" class="rounded-lg border px-3 py-2.5" :class="m==='*'?'bg-gray-50 border-gray-200':'bg-indigo-50 border-indigo-100'">
+        <div class="font-medium text-sm" :class="m==='*'?'text-gray-600':'text-indigo-700'">{{m==='*'?'* 其他模型':m}}</div>
+        <div class="flex items-center gap-3 mt-1.5 text-xs">
+          <span class="text-cyan-600"><span class="font-medium">{{lim.rpm===-1?'∞':lim.rpm}}</span> RPM</span>
+          <span class="text-gray-300">|</span>
+          <span class="text-violet-600"><span class="font-medium">{{lim.tpm===-1?'∞':formatNum(lim.tpm)}}</span> TPM</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Recent + 24h -->
+  <div class="grid grid-cols-3 gap-4 mb-5">
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('requests')}}</div>
+<div class="text-2xl font-bold text-rose-600">{{userDash.total_requests||0}}</div>
+<div class="text-xs text-gray-400 mt-1">{{t('successRate')}} {{userDash.total_requests?Math.round((userDash.success_requests||0)/userDash.total_requests*100):0}}%</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">24h {{t('requests')}}</div>
+<div class="text-2xl font-bold text-sky-600">{{userDash.recent_24h_requests||0}}</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">24h Token</div>
+<div class="text-2xl font-bold text-cyan-600">{{formatNum(userDash.recent_24h_tokens||0)}}</div>
+</div>
+  </div>
+  <!-- Authed Models -->
+  <div v-if="userDash.authorized_models?.length" class="bg-white rounded-xl border shadow-sm p-5 mb-5">
+    <h3 class="text-sm font-semibold text-gray-600 mb-3">🤖 {{t('authedModels')}}</h3>
+    <div class="flex flex-wrap gap-2">
+<span v-for="m in userDash.authorized_models" :key="m" class="text-xs bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-lg font-mono ring-1 ring-indigo-200">{{m}}</span>
+</div>
+  </div>
+  <!-- Model Usage -->
+  <!-- Usage Trend Chart -->
+  <div class="bg-white rounded-xl border shadow-sm p-5 mb-5">
+    <h3 class="text-sm font-semibold text-gray-600 mb-3">📈 30天用量趋势</h3>
+    <div style="height:280px">
+<canvas id="myDashChartCanvas">
+</canvas>
+</div>
+  </div>
+  <!-- Model Usage -->
+  <div v-if="userDash.model_stats?.length" class="bg-white rounded-xl border shadow-sm p-5 mb-5">
+    <h3 class="text-sm font-semibold text-gray-600 mb-3">{{t('modelUsage')}}</h3>
+    <div class="space-y-3">
+      <div v-for="m in userDash.model_stats" :key="m.model" class="flex items-center gap-3">
+        <span class="text-xs font-mono text-gray-700 w-40 truncate font-medium">{{m.model}}</span>
+        <div class="flex-1 bg-gray-100 rounded-full h-2.5">
+<div class="bg-gradient-to-r from-purple-400 to-indigo-500 rounded-full h-2.5 transition-all" :style="{width:barWidth(m.count,userDash.model_stats)+'%'}">
+</div>
+</div>
+        <span class="text-xs text-gray-500 w-24 text-right font-medium">{{m.count}}次 · {{m.avg_latency}}ms</span>
+      </div>
+    </div>
+  </div>
+  <!-- Recent Logs -->
+  <div v-if="userDash.recent_logs?.length" class="bg-white rounded-xl border shadow-sm p-5">
+    <h3 class="text-sm font-semibold text-gray-600 mb-3">{{t('recentLogs')}}</h3>
+    <div class="space-y-1.5">
+      <div v-for="l in userDash.recent_logs.slice(0,10)" :key="l.created_at" class="flex items-center gap-3 text-xs py-1 border-b border-gray-50 last:border-0">
+        <span class="text-gray-400 w-36">{{fmtTime(l.created_at)}}</span>
+        <span class="font-mono text-indigo-600 w-28 truncate">{{l.model}}</span>
+        <span class="text-emerald-500 font-medium">↑{{l.prompt_tokens}}</span>
+        <span class="text-amber-500 font-medium">↓{{l.completion_tokens}}</span>
+        <span class="text-gray-400">{{l.latency_ms}}ms</span>
+        <span :class="l.success?'text-green-500':'text-red-500'" class="font-bold">{{l.success?'✓':'✗'}}</span>
+      </div>
+    </div>
+  </div>
+</div>
+<div v-if="tab==='dashboard' && isAdmin">
+  <h2 class="text-xl font-bold text-gray-800 mb-6">📊 {{t('dashboard')}}</h2>
+
+  <!-- My Info -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden mb-6">
+    <div class="px-5 py-3 border-b bg-gradient-to-r from-indigo-50 to-purple-50 flex items-center gap-2">
+      <span class="text-base">👤</span>
+<span class="font-semibold text-indigo-700 text-sm">{{t('myInfo')}}</span>
+    </div>
+    <div class="p-5">
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        <div>
+<div class="text-xs font-medium text-gray-400 mb-1">{{t('tokenCountQuota')}}</div>
+<div class="text-lg font-bold text-indigo-600">{{userDash.token_count||0}}<span class="text-sm text-gray-300 font-normal"> / {{userDash.max_tokens===999?'∞':userDash.max_tokens}}</span>
+</div>
+</div>
+        <div>
+<div class="text-xs font-medium text-gray-400 mb-1">{{t('tokenUsageQuota')}}</div>
+<div class="text-lg font-bold" :class="userDash.token_quota===-1||userDash.token_quota==='-1'?'':'text-gray-800'">
+<span v-if="userDash.token_quota===-1||userDash.token_quota==='-1'" class="text-xs bg-purple-50 text-purple-500 px-2.5 py-1 rounded-lg ring-1 ring-purple-200 font-medium">∞ 不限量</span>
+<span v-else>{{formatNum(userDash.token_quota)}}</span>
+</div>
+<div v-if="userDash.token_quota!==-1&&userDash.token_quota!=='-1'" class="mt-1">
+<div class="flex items-center justify-between text-xs text-gray-400 mb-0.5">
+<span>已用 {{formatNum(userDash.token_quota_used)}}</span>
+<span>{{t('quotaRemaining')}} {{formatNum(bigSub(userDash.token_quota,userDash.token_quota_used))}}</span>
+</div>
+<div class="w-full bg-gray-100 rounded-full h-1.5">
+<div class="bg-gradient-to-r from-purple-400 to-pink-500 rounded-full h-1.5 transition-all" :style="{width:Math.min(100,Number(userDash.token_quota_used)/Number(userDash.token_quota)*100)+'%'}">
+</div>
+</div>
+</div>
+</div>
+        <div>
+<div class="text-xs font-medium text-gray-400 mb-1">{{t('group')}}</div>
+<div class="text-lg font-bold text-blue-600">{{userDash.group_name||'--'}}</div>
+</div>
+        <div>
+<div class="text-xs font-medium text-gray-400 mb-1">{{t('inputTokens')}}</div>
+<div class="text-lg font-bold text-emerald-600">{{formatNum(userDash.total_prompt_tokens||0)}}</div>
+</div>
+        <div>
+<div class="text-xs font-medium text-gray-400 mb-1">{{t('outputTokens')}}</div>
+<div class="text-lg font-bold text-amber-600">{{formatNum(userDash.total_completion_tokens||0)}}</div>
+</div>
+      </div>
+      <div v-if="userDash.authorized_models?.length" class="mt-4 flex flex-wrap gap-2 items-center">
+        <span class="text-xs font-medium text-gray-500">{{t('authedModels')}}:</span>
+        <span v-for="m in userDash.authorized_models" :key="m" class="text-xs bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-lg font-mono ring-1 ring-indigo-200">{{m}}</span>
+      </div>
+    </div>
+
+      <!-- RPM/TPM Card -->
+      <div class="bg-white rounded-xl border shadow-sm p-5 mt-4">
+        <div class="text-xs font-medium text-gray-400 mb-2">RPM / TPM</div>
+        <div class="flex items-baseline gap-1">
+          <span class="text-xl font-bold text-cyan-600">{{userDash.rpm===-1?'∞':(userDash.rpm===0?'无额度':userDash.rpm)}}</span>
+          <span class="text-xs text-gray-300">/</span>
+          <span class="text-xl font-bold text-violet-600">{{userDash.tpm===-1?'∞':(userDash.tpm===0?'无额度':formatNum(userDash.tpm))}}</span>
+        </div>
+        <div class="text-xs text-gray-300 mt-1">{{userDash.rate_mode==='admin'?'管理员不限':(userDash.rate_mode==='inherit'?'继承分组':(userDash.rpm===-1?'不限制':(userDash.rpm===0?'已禁用':'每分钟')))}}</div>
+      </div>
+      <!-- Model Limits -->
+      <div v-if="userDash.model_limits && Object.keys(userDash.model_limits).length" class="bg-white rounded-xl border shadow-sm p-5 mt-4">
+        <div class="text-xs font-medium text-gray-400 mb-3">模型访问策略 <span v-if="userDash.rate_mode==='inherit'" class="text-indigo-400">· 继承自「{{userDash.group_name}}」分组</span></div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div v-for="(lim,m) in userDash.model_limits" :key="m" class="rounded-lg border px-3 py-2.5" :class="m==='*'?'bg-gray-50 border-gray-200':'bg-indigo-50 border-indigo-100'">
+            <div class="font-medium text-sm" :class="m==='*'?'text-gray-600':'text-indigo-700'">{{m==='*'?'* 其他模型':m}}</div>
+            <div class="flex items-center gap-3 mt-1.5 text-xs">
+              <span class="text-cyan-600"><span class="font-medium">{{lim.rpm===-1?'∞':(lim.rpm===0?'禁止':lim.rpm)}}</span> RPM</span>
+              <span class="text-gray-300">|</span>
+              <span class="text-violet-600"><span class="font-medium">{{lim.tpm===-1?'∞':(lim.tpm===0?'禁止':formatNum(lim.tpm))}}</span> TPM</span>
+            </div>
+          </div>
+        </div>
+      </div>
+  </div>
+
+  <!-- Platform Stats Header -->
+  <div class="flex items-center gap-3 mb-5">
+    <div class="flex-1 border-t-2 border-indigo-200">
+</div>
+    <span class="text-sm text-indigo-600 font-bold tracking-wide">📊 平台统计</span>
+    <div class="flex-1 border-t-2 border-indigo-200">
+</div>
+  </div>
+
+  <!-- Platform Stats -->
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('channels')}}</div>
+<div class="text-2xl font-bold text-indigo-600">{{stats.channels||0}}</div>
+<div class="text-xs text-gray-400 mt-1">{{t('active')}} {{stats.channels_enabled||0}}</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('users')}}</div>
+<div class="text-2xl font-bold text-purple-600">{{stats.users||0}}</div>
+<div class="text-xs text-gray-400 mt-1">{{t('active')}} {{stats.users_enabled||0}}</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('tokens')}}</div>
+<div class="text-2xl font-bold text-emerald-600">{{stats.tokens||0}}</div>
+<div class="text-xs text-gray-400 mt-1">{{t('active')}} {{stats.tokens_enabled||0}}</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('requests')}}</div>
+<div class="text-2xl font-bold text-amber-600">{{stats.total_requests||0}}</div>
+<div class="text-xs text-gray-400 mt-1">{{t('successRate')}} {{stats.total_requests?Math.round((stats.success_requests||0)/stats.total_requests*100):0}}%</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('tokensUsed')}}</div>
+<div class="text-2xl font-bold text-rose-600">{{formatNum(stats.total_tokens||0)}}</div>
+<div class="text-xs text-gray-400 mt-1">24h: {{formatNum(stats.recent_24h_tokens||0)}}</div>
+</div>
+  </div>
+  <div class="grid grid-cols-3 gap-4 mb-5">
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('inputTok')}}</div>
+<div class="text-xl font-bold text-emerald-600">{{formatNum(stats.total_prompt_tokens||0)}}</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('outputTok')}}</div>
+<div class="text-xl font-bold text-amber-600">{{formatNum(stats.total_completion_tokens||0)}}</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('latency')}} (avg)</div>
+<div class="text-xl font-bold text-blue-600">{{stats.avg_latency_ms||0}}ms</div>
+<div class="text-xs text-gray-400 mt-1">24h: {{stats.recent_24h_requests||0}} {{t('requests')}}</div>
+</div>
+  </div>
+  <!-- Model Usage -->
+  <!-- Usage Trend Chart -->
+  <div class="bg-white rounded-xl border shadow-sm p-5 mb-5">
+    <h3 class="text-sm font-semibold text-gray-600 mb-3">📈 30天用量趋势</h3>
+    <div style="height:280px">
+<canvas id="dashChartCanvas">
+</canvas>
+</div>
+  </div>
+  <!-- Model Usage -->
+  <div v-if="dash.model_stats?.length" class="bg-white rounded-xl border shadow-sm p-5">
+    <h3 class="text-sm font-semibold text-gray-600 mb-3">{{t('modelUsage')}}</h3>
+    <div class="space-y-3">
+      <div v-for="m in dash.model_stats" :key="m.model" class="flex items-center gap-3">
+        <span class="text-xs font-mono text-gray-700 w-40 truncate font-medium">{{m.model}}</span>
+        <div class="flex-1 bg-gray-100 rounded-full h-2.5">
+<div class="bg-gradient-to-r from-indigo-400 to-blue-500 rounded-full h-2.5 transition-all" :style="{width:barWidth(m.count,dash.model_stats)+'%'}">
+</div>
+</div>
+        <span class="text-xs text-gray-500 w-24 text-right font-medium">{{m.count}}次 · {{m.avg_latency}}ms</span>
+      </div>
+    </div>
+  </div>
+</div>
+<div v-if="tab==='channels'">
+  <div class="flex items-center justify-between mb-4">
+<h2 class="text-xl font-bold text-gray-800">{{t('channels')}}</h2>
+<button @click="editingChId?cancelEditChannel():showAddCh=!showAddCh" :class="['px-4 py-2 rounded-xl text-sm font-medium transition',showAddCh?'bg-gray-200 text-gray-600':'bg-indigo-600 text-white hover:bg-indigo-700']">{{editingChId?t('cancel'):showAddCh?t('cancel'):'+ '+t('addChannel')}}</button>
+</div>
+  <div v-if="showAddCh||editingChId" class="bg-white rounded-xl border p-5 mb-4 fade-in">
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('chName')}}</label>
+<input v-model="ch.name" class="w-full px-3 py-2 rounded-lg border text-sm" :placeholder="t('chNamePh')">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('chType')}}</label>
+<select v-model="ch.type" class="w-full px-3 py-2 rounded-lg border text-sm">
+<option>openai</option>
+<option>anthropic</option>
+<option>azure</option>
+<option>custom</option>
+</select>
+</div>
+      <div class="col-span-2">
+<label class="text-xs text-gray-400 block mb-1">Base URL</label>
+<input v-model="ch.base_url" class="w-full px-3 py-2 rounded-lg border text-sm" placeholder="https://api.openai.com/v1">
+</div>
+      <div class="col-span-2">
+<label class="text-xs text-gray-400 block mb-1">API Key</label>
+<input v-model="ch.api_key" type="password" @input="ch._api_key_changed=true" class="w-full px-3 py-2 rounded-lg border text-sm" :placeholder="editingChId&&!ch._api_key_changed?'留空不修改，输入新Key则替换':'sk-...'">
+</div>
+      <div class="col-span-2">
+<label class="text-xs text-gray-400 block mb-1">{{t('externalModels')}} <span class="text-gray-300">({{t('externalModelsTip')}})</span>
+</label>
+<input v-model="ch.models" class="w-full px-3 py-2 rounded-lg border text-sm" placeholder="GLM-5.1, GPT-4o">
+</div>
+      <div class="col-span-2">
+<label class="text-xs text-gray-400 block mb-1">{{t('upstreamModels')}} <span class="text-gray-300">({{t('upstreamModelsTip')}})</span>
+</label>
+<input v-model="ch.upstream_models" class="w-full px-3 py-2 rounded-lg border text-sm" placeholder="glm, gpt-4o-0613">
+</div>
+      <div class="col-span-2">
+<label class="text-xs text-gray-400 block mb-1">{{t('allowedGroups')}}</label>
+<div v-if="sysSet.groups.length" class="flex flex-wrap gap-2 mt-1">
+<label v-for="g in sysSet.groups" :key="g.id" class="inline-flex items-center gap-1.5 text-sm bg-gray-50 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-indigo-50 transition">
+<input type="checkbox" :value="g.name" v-model="chAllowedGroups" class="rounded text-indigo-600"> {{g.name}}</label>
+</div>
+<div v-else class="text-xs text-gray-300">{{t('noGroupsTip')}}</div>
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('weight')}}</label>
+<input v-model.number="ch.weight" type="number" class="w-full px-3 py-2 rounded-lg border text-sm">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('priority')}}</label>
+<input v-model.number="ch.priority" type="number" class="w-full px-3 py-2 rounded-lg border text-sm">
+</div>
+    </div>
+    <div class="flex items-center gap-4 mt-3">
+<label class="flex items-center gap-2 text-sm text-[#8b949e]">
+<input type="checkbox" v-model="ch.auto_ban" class="rounded">{{t('autoBan')}}</label>
+<button @click="editingChId?saveEditChannel():addChannel()" class="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium">{{editingChId?t('save'):t('addChannel')}}</button>
+</div>
+  </div>
+  <div v-if="channels.length" class="space-y-3">
+    <div v-for="c in channels" :key="c.id" class="bg-white rounded-xl border p-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+<span :class="['w-2.5 h-2.5 rounded-full',c.enabled?'bg-green-400':'bg-red-300']">
+</span>
+<span class="font-semibold">{{c.name}}</span>
+<span class="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded">{{c.type}}</span>
+</div>
+        <div class="flex items-center gap-2">
+          <button @click="testChannel(c.id)" :disabled="testing[c.id]" class="px-3 py-1.5 rounded-lg text-xs border hover:bg-gray-50 disabled:opacity-50">{{testing[c.id]?t('testing')+'...':t('test')}}</button>
+          <span v-if="testResults[c.id]" :class="['text-xs',testResults[c.id].success?'text-green-600':'text-red-500']">{{testResults[c.id].latency_ms}}ms ({{testResults[c.id].model}})</span>
+          <button @click="toggleChannel(c)" class="px-3 py-1.5 rounded-lg text-xs border" :class="c.enabled?'border-red-200 text-red-500':'border-green-200 text-green-600'">{{c.enabled?t('disable'):t('enable')}}</button>
+          <button @click="editChannel(c)" class="px-3 py-1.5 rounded-lg text-xs border border-indigo-200 text-indigo-500 hover:bg-indigo-50">{{t('edit')}}</button>
+<button @click="delChannel(c.id)" class="px-3 py-1.5 rounded-lg text-xs border border-gray-200 text-gray-400 hover:text-red-500">{{t('delete')}}</button>
+        </div>
+      </div>
+      <div class="mt-1 flex flex-wrap gap-1">
+<span v-for="m in (c.models||'*').split(',')" :key="m" class="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded font-mono">{{m.trim()}}</span>
+<span v-for="g in (c.allowed_groups||'').split(',').map(x=>x.trim()).filter(x=>x&&x!=='__none__')" :key="g" class="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded ml-0.5">🏷️ {{g}}</span>
+</div>
+<div class="mt-1 flex items-center gap-3 text-xs text-gray-400">
+<span v-if="c.fail_count">❌ 失败{{c.fail_count}}次</span>
+<span v-if="c.response_time">⚡ {{c.response_time}}ms</span>
+</div>
+    </div>
+  </div>
+  <div v-else class="bg-white rounded-xl border p-12 text-center text-gray-300">{{t('noChannels')}}</div>
+</div>
+<div v-if="tab==='groups'">
+  <div class="flex items-center justify-between mb-4">
+<h2 class="text-xl font-bold text-gray-800">🏷️ {{t('groups')}}</h2>
+<button @click="showAddGrp=!showAddGrp" :class="['px-4 py-2 rounded-xl text-sm font-medium transition',showAddGrp?'bg-gray-200 text-gray-600':'bg-indigo-600 text-white hover:bg-indigo-700']">{{showAddGrp?t('cancel'):'+ '+t('addGroup')}}</button>
+</div>
+  <div v-if="showAddGrp" class="bg-white rounded-xl border p-5 mb-4 fade-in">
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('grpName')}}</label>
+<input v-model="newGrp.name" class="w-full px-3 py-2 rounded-lg border text-sm" :placeholder="t('grpNamePh')">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('comment')}}</label>
+<input v-model="newGrp.comment" class="w-full px-3 py-2 rounded-lg border text-sm">
+</div>
+    </div>
+    <button @click="createGroup" class="mt-3 px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium">{{t('addGroup')}}</button>
+  </div>
+  <div v-if="groups.length" class="bg-white rounded-xl border overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 border-b">
+<tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-400">ID</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-400">{{t('grpName')}}</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-400">{{t('comment')}}</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-400">{{t('bindChannels')}}</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-400">访问策略</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-400">{{t('userCount')}}</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-400">{{t('actions')}}</th>
+      </tr>
+</thead>
+      <tbody>
+        <tr v-for="g in groups" :key="g.id" class="border-b border-gray-50">
+          <td class="px-4 py-3 text-xs text-gray-400">{{g.id}}</td>
+          <td class="px-4 py-3 font-medium">
+<input v-model="g.name" class="px-2 py-1 rounded border text-sm w-32">
+</td>
+          <td class="px-4 py-3">
+<input v-model="g.comment" class="px-2 py-1 rounded border text-sm w-full">
+</td>
+          <td class="px-4 py-3">
+<div class="flex flex-wrap gap-1.5">
+<label v-for="c in channels" :key="c.id" class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-lg cursor-pointer" :class="grpChannels(g).includes(c.id)?'bg-indigo-50 text-indigo-600':'bg-gray-50 text-gray-400 hover:bg-gray-100'">
+<input type="checkbox" :value="c.id" :checked="grpChannels(g).includes(c.id)" @change="toggleGrpChannel(g,c,$event)" class="rounded text-indigo-600"> {{c.name}}</label>
+<span v-if="!channels.length" class="text-xs text-gray-300">{{t('noChannels')}}</span>
+</div>
+</td>
+          <td class="px-4 py-3 text-center text-xs">
+<div class="flex flex-col gap-1">
+<div class="flex gap-2 justify-center"><label class="flex items-center gap-1"><input type="radio" v-model="g.rate_mode" value="global" class="text-indigo-600"> RPM/TPM</label><label class="flex items-center gap-1"><input type="radio" v-model="g.rate_mode" value="per_model" class="text-indigo-600"> 模型策略</label></div>
+<div v-if="g.rate_mode==='global'" class="flex gap-1 justify-center"><input v-model.number="g.rpm" type="number" class="w-14 px-1 py-0.5 rounded border text-xs text-center" placeholder="RPM"><input v-model.number="g.tpm" type="number" class="w-16 px-1 py-0.5 rounded border text-xs text-center" placeholder="TPM"></div>
+<div v-if="g.rate_mode==='per_model'" class="text-center"><button @click="openMrlEditor(g,'group')" class="text-indigo-500 hover:text-indigo-700 font-medium">{{g.model_rate_limits?Object.keys(JSON.parse(g.model_rate_limits||'{}')).length+'个策略':'点击设置'}}</button></div>
+</div>
+</td>
+          <td class="px-4 py-3 text-center">
+<span class="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full">{{g.user_count}}</span>
+</td>
+          <td class="px-4 py-3 text-center space-x-1">
+            <button @click="updateGroup(g)" class="text-xs text-green-600 hover:underline">{{t('save')}}</button>
+            <button @click="delGroup(g.id)" class="text-xs text-red-400 hover:underline">{{t('delete')}}</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div v-else class="bg-white rounded-xl border p-12 text-center text-gray-300">{{t('noGroups')}}</div>
+</div>
+<div v-if="tab==='users'">
+  <h2 class="text-xl font-bold text-gray-800 mb-6">{{t('users')}}</h2>
+  <div class="flex gap-3 mb-4 flex-wrap">
+    <input v-model="userFilter.keyword" type="text" class="flex-1 min-w-[200px] px-4 py-2.5 rounded-xl border text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none" placeholder="搜索用户名/ID">
+    <select v-model="userFilter.role" class="px-3 py-2.5 rounded-xl border text-sm"><option value="">所有角色</option><option value="admin">Admin</option><option value="operator">Operator</option><option value="user">User</option></select>
+    <select v-model="userFilter.status" class="px-3 py-2.5 rounded-xl border text-sm"><option value="">所有状态</option><option value="active">启用</option><option value="disabled">禁用</option></select>
+    <select v-model="userFilter.group" class="px-3 py-2.5 rounded-xl border text-sm"><option value="">所有分组</option><option v-for="g in groups" :key="g.id" :value="g.name">{{g.name}}</option></select>
+  </div>
+  <div class="text-xs text-gray-400 mb-2">共 {{filteredUsers.length}} / {{users.length}} 个用户</div>
+  <div class="space-y-4">
+    <div v-for="u in filteredUsers" :key="u.id" class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div @click="u._expanded=!u._expanded" class="flex items-center justify-between px-5 py-3 border-b cursor-pointer hover:bg-gray-50 transition">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold" :class="u.id===1?'bg-amber-500':u.role==='admin'?'bg-indigo-500':u.role==='operator'?'bg-blue-500':'bg-gray-400'">{{u.username.charAt(0).toUpperCase()}}</div>
+          <div>
+            <div class="font-semibold text-gray-800 text-sm">{{u.username}}<span v-if="u.id===1" class="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Super</span>
+</div>
+            <div class="text-xs text-gray-400 mt-0.5">ID: {{u.id}}</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-gray-300 text-sm transition-transform" :style="{transform:u._expanded?'rotate(180deg)':''}">&#9660;</span>
+          <div class="flex items-center gap-1.5 ml-2">
+            <button @click="updateUser(u)" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-green-50 text-green-700 hover:bg-green-100 ring-1 ring-green-200 transition">💾 {{t('save')}}</button>
+            <template v-if="u.id!==1 || currentUser?.id===1">
+            <button @click="toggleUserEnabled(u)" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-700 hover:bg-indigo-100 ring-1 ring-indigo-200 transition">{{u.enabled?'⏸ '+t('disable'):'▶ '+t('enable')}}</button>
+            <button @click="resetUserPwd(u)" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-50 text-amber-700 hover:bg-amber-100 ring-1 ring-amber-200 transition">🔑 {{t('resetPwd')}}</button>
+            <button v-if="u.id!==1" @click="delUser(u.id)" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 ring-1 ring-red-200 transition">🗑 {{t('delete')}}</button>
+            </template>
+          </div>
+        </div>
+      </div>
+      <div v-show="u._expanded" class="p-5 grid grid-cols-4 gap-5">
+        <div class="space-y-3">
+          <div>
+            <label class="text-xs font-medium text-[#8b949e] block mb-1">{{t('role')}}</label>
+            <select v-model="u.role" class="w-full px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition" :disabled="u.id===currentUser?.id || (u.id===1 && currentUser?.id!==1)">
+              <option value="admin" v-if="currentUser?.id===1 || u.role==='admin'">admin</option>
+              <option value="operator">operator</option>
+              <option value="user">user</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs font-medium text-[#8b949e] block mb-1">{{t('group')}}</label>
+            <select v-if="sysSet.groups.length && (u.id!==1 || currentUser?.id===1)" v-model.number="u.group_id" @change="u._group_changed=true" class="w-full px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition">
+              <option :value="0">--</option>
+              <option v-for="g in sysSet.groups" :key="g.id" :value="g.id">{{g.name}}</option>
+            </select>
+            <span v-else class="text-sm text-gray-400">{{u.group_name||'--'}}</span>
+          </div>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1">{{t('maxTokensCount')}}</label>
+          <input v-model.number="u.max_tokens" type="number" min="0" class="w-full px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition" :disabled="u.id===1 && currentUser?.id!==1">
+        </div>
+        <div class="mt-3 space-y-3">
+          <div class="flex gap-4"><label class="flex items-center gap-1.5 text-sm"><input type="radio" v-model="u.rate_mode" value="inherit" class="text-indigo-600"> 继承分组</label><label class="flex items-center gap-1.5 text-sm"><input type="radio" v-model="u.rate_mode" value="global" class="text-indigo-600"> 全局 RPM/TPM</label><label class="flex items-center gap-1.5 text-sm"><input type="radio" v-model="u.rate_mode" value="per_model" class="text-indigo-600"> 模型策略</label></div>
+          <div v-if="u.rate_mode==='inherit'" class="text-xs text-gray-400">继承所属分组的访问策略</div>
+          <div v-if="u.rate_mode==='global'" class="flex gap-3"><div class="flex-1"><label class="text-xs font-medium text-[#8b949e] block mb-1">每分钟请求上限</label><input v-model.number="u.rpm" type="number" min="0" class="w-full px-2.5 py-1.5 rounded-lg border text-sm" placeholder="0=无额度 -1=不限制"></div><div class="flex-1"><label class="text-xs font-medium text-[#8b949e] block mb-1">每分钟Token上限</label><input v-model.number="u.tpm" type="number" min="0" class="w-full px-2.5 py-1.5 rounded-lg border text-sm" placeholder="-1=不限"></div></div>
+          <div v-if="u.rate_mode==='per_model'"><button @click="openMrlEditor(u,'user')" type="button" class="px-3 py-1.5 rounded-lg border text-sm text-indigo-600 hover:bg-indigo-50 transition">{{u.model_rate_limits?Object.keys(JSON.parse(u.model_rate_limits||'{}')).length+'个策略':'点击设置'}}</button></div>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1">{{t('tokenQuota')}}</label>
+          <div class="text-lg font-bold" :class="u.token_quota===-1||u.token_quota==='-1'?'':'text-gray-800'">
+<span v-if="u.token_quota===-1||u.token_quota==='-1'" class="text-xs bg-purple-50 text-purple-500 px-2.5 py-1 rounded-lg ring-1 ring-purple-200 font-medium">∞ 不限量</span>
+<span v-else>{{formatNum(u.token_quota)}}</span>
+</div>
+          <div v-if="u.token_quota!==-1&&u.token_quota!=='-1'" class="mt-1">
+            <div class="flex items-center justify-between text-xs text-gray-400 mb-0.5">
+<span>已用 {{formatNum(u.token_quota_used)}}</span>
+<span>{{t('quotaRemaining')}} {{formatNum(bigSub(u.token_quota,u.token_quota_used))}}</span>
+</div>
+            <div class="w-full bg-gray-100 rounded-full h-1.5">
+<div class="bg-indigo-500 rounded-full h-1.5 transition-all" :style="{width:Math.min(100,Number(u.token_quota_used)/Number(u.token_quota)*100)+'%'}">
+</div>
+</div>
+          </div>
+          <div class="flex items-center gap-1.5 mt-2">
+            <button @click="rechargeUser(u)" class="text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-lg hover:bg-green-100 ring-1 ring-green-200 transition font-medium">+ {{t('recharge')}}</button>
+            <button @click="deductUser(u)" class="text-xs bg-orange-50 text-orange-700 px-2.5 py-1 rounded-lg hover:bg-orange-100 ring-1 ring-orange-200 transition font-medium">- {{t('deductUser')}}</button>
+            <button v-if="u.token_quota===-1||u.token_quota==='-1'" @click="setUserQuotaManual(u)" class="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg hover:bg-blue-100 ring-1 ring-blue-200 transition font-medium">✏️ 设额度</button>
+            <button v-else @click="setUserQuotaUnlimited(u)" class="text-xs bg-purple-50 text-purple-700 px-2.5 py-1 rounded-lg hover:bg-purple-100 ring-1 ring-purple-200 transition font-medium" :title="t('setUnlimited')">∞ {{t('setUnlimited')}}</button>
+          </div>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1">{{t('allowedModels')}}</label>
+          <div v-if="sysSet.all_models?.length" class="flex flex-wrap gap-1.5">
+            <label v-for="m in sysSet.all_models" :key="m" class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-lg cursor-pointer transition" :class="userModelArr(u).includes(m)?'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 font-medium':'bg-gray-50 text-gray-400 hover:bg-gray-100 ring-1 ring-gray-200'">
+              <input type="checkbox" :value="m" :checked="userModelArr(u).includes(m)" @change="toggleUserModel(u,m,$event)" class="rounded text-indigo-600 w-3 h-3"> {{m}}
+            </label>
+          </div>
+          <span v-else class="text-xs text-gray-300">{{t('noChannels')}}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div v-if="tab==='tokens'">
+  <h2 class="text-xl font-bold text-gray-800 mb-4">{{t('allTokens')}}</h2>
+  <div v-if="allTokens.length" class="bg-white rounded-xl border overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 border-b">
+<tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-400">{{t('username')}}</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-400">{{t('tkName')}}</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-400">Key</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-400">{{t('models')}}</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-400">{{t('quota')}}</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-400">{{t('status')}}</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-400">{{t('actions')}}</th>
+      </tr>
+</thead>
+      <tbody>
+        <tr v-for="tk in allTokens" :key="tk.id" class="border-b border-gray-50">
+          <td class="px-4 py-3 text-xs">{{tk.username}}</td>
+          <td class="px-4 py-3 font-medium">{{tk.name}}</td>
+          <td class="px-4 py-3 text-xs font-mono text-gray-400">
+<span>{{tk.key}}</span>
+</td>
+          <td class="px-4 py-3">
+<input v-model="tk.models" class="w-full px-2 py-1 rounded border text-xs" :placeholder="t('inheritUser')" @change="updateTokenAdmin(tk)">
+</td>
+          <td class="px-4 py-3 text-center">
+            <div class="text-sm font-medium">{{tk.quota_limit===-1?'∞':tk.quota_used+' / '+tk.quota_limit}}</div>
+            <div v-if="tk.quota_limit!==-1" class="text-xs text-gray-400">({{t('quotaRemaining')}}: {{formatNum(bigSub(tk.quota_limit,tk.quota_used))}})</div>
+            <div class="flex items-center gap-1 mt-1 justify-center">
+              <button @click="rechargeTk(tk)" class="text-xs bg-green-500 text-white px-2 py-0.5 rounded hover:bg-green-600">{{t('recharge')}}</button>
+              <button @click="setTkQuotaUnlimited(tk)" class="text-xs bg-purple-500 text-white px-2 py-0.5 rounded hover:bg-purple-600" :title="t('setUnlimited')">∞ {{t('setUnlimited')}}</button>
+            </div>
+          </td>
+          <td class="px-4 py-3 text-center">
+<span :class="['text-xs px-2 py-1 rounded-full',tk.enabled?'bg-green-50 text-green-600':'bg-red-50 text-red-500']">{{tk.enabled?t('active'):t('disabled')}}</span>
+</td>
+          <td class="px-4 py-3 text-center">
+            <button @click="toggleTokenAdmin(tk)" class="text-xs text-indigo-600 hover:underline mr-1">{{tk.enabled?t('disable'):t('enable')}}</button>
+            <button @click="delTokenAdmin(tk.id)" class="text-xs text-red-400 hover:underline">{{t('delete')}}</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+<div v-if="tab==='myTokens'">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-xl font-bold text-gray-800">{{t('myTokens')}}</h2>
+    <button v-if="currentUser?.can_create_token" @click="showAddMyTk=!showAddMyTk" :class="['px-4 py-2 rounded-xl text-sm font-medium transition',showAddMyTk?'bg-gray-200 text-gray-600':'bg-purple-600 text-white hover:bg-purple-700']">{{showAddMyTk?t('cancel'):'+ '+t('createToken')}}</button>
+  </div>
+  <div v-if="currentUser" class="bg-white rounded-xl border p-4 mb-4 text-sm text-[#8b949e] space-y-1">
+    <div>{{t('tokenCountQuota')}}: {{myTokens.length}} / {{currentUser.max_tokens}}</div>
+    <div>{{t('tokenUsageQuota')}}: <span v-if="currentUser.token_quota===-1" class="text-xs bg-purple-50 text-purple-500 px-2 py-0.5 rounded-lg ring-1 ring-purple-200 font-medium">∞ 不限量</span>
+<span v-else>{{formatNum(currentUser.token_quota_used)+' / '+formatNum(currentUser.token_quota)+' ('+t('quotaRemaining')+formatNum(bigSub(currentUser.token_quota,currentUser.token_quota_used))+')'}}</span>
+</div>
+    <div>{{t('allowedModels')}}: {{userDash.authorized_models?.length?userDash.authorized_models.join(', '):t('noAuthedModels')}}</div>
+  </div>
+  <div v-if="showAddMyTk" class="bg-white rounded-xl border p-5 mb-4 fade-in">
+    <div class="grid grid-cols-3 gap-3">
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('tkName')}}</label>
+<input v-model="myTk.name" class="w-full px-3 py-2 rounded-lg border text-sm" :placeholder="t('tkNamePh')">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('selectModels')}}</label>
+<div class="flex flex-wrap gap-1.5 mt-1">
+<label class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-lg cursor-pointer font-medium" :class="myTkModels.length===0?'bg-green-50 text-green-600':'bg-gray-50 text-gray-400 hover:bg-gray-100'">
+<input type="checkbox" :checked="myTkModels.length===0" @change="$event.target.checked && (myTkModels=[])" class="rounded text-green-600"> {{t('allModels')}}</label>
+<label v-for="m in myAvailableModels" :key="m" class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-lg cursor-pointer" :class="myTkModels.includes(m)?'bg-purple-50 text-purple-600':'bg-gray-50 text-gray-400 hover:bg-gray-100'">
+<input type="checkbox" :value="m" v-model="myTkModels" class="rounded text-purple-600"> {{m}}</label>
+<span v-if="!myAvailableModels.length" class="text-xs text-gray-300">{{t('noAuthedModels')}}</span>
+</div>
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('quota')}} (-1={{t('unlimited')}})</label>
+<input v-model.number="myTk.quota_limit" type="number" class="w-full px-3 py-2 rounded-lg border text-sm" @change="myTk.quota_limit=myTk.quota_limit<-1?-1:myTk.quota_limit">
+</div>
+    </div>
+    <button @click="createMyToken" class="mt-3 px-5 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium">{{t('createToken')}}</button>
+    <div v-if="newTokenKey" class="mt-3 p-3 bg-green-50 border border-green-100 rounded-lg text-sm text-green-700">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span>✓ {{t('created')}}:</span>
+        <span class="font-mono break-all">{{revealedKeys['new']?newTokenKey:maskKey(newTokenKey)}}</span>
+        <span @click="revealedKeys['new']=!revealedKeys['new']" class="cursor-pointer text-green-500 hover:text-green-700 text-xs">👁</span>
+        <button @click="copyKey(newTokenKey)" class="px-2.5 py-1 rounded-md bg-green-100 text-green-700 text-xs font-medium hover:bg-green-200 transition">{{t('copy')}}</button>
+      </div>
+      <div class="mt-2 text-amber-600 text-xs">⚠️ 请立即复制并保存此 Key，关闭后将无法再次查看完整内容！</div>
+    </div>
+  </div>
+  <div v-if="myTokens.length" class="bg-white rounded-xl border overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 border-b">
+<tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-400">{{t('tkName')}}</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-400">Key</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-400">{{t('models')}}</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-400">{{t('quota')}}</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-400">{{t('status')}}</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-400">{{t('actions')}}</th>
+      </tr>
+</thead>
+      <tbody>
+        <tr v-for="tk in myTokens" :key="tk.id" class="border-b border-gray-50">
+          <td class="px-4 py-3 font-medium">{{tk.name}}</td>
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-2">
+              <span @click="toggleReveal(tk)" class="text-xs font-mono text-gray-400 cursor-pointer select-none hover:text-indigo-500" :title="revealedKeys[tk.id]?t('clickHide'):t('clickShow')">{{displayKey(tk)}}</span>
+              <button @click="copyKey(tk.key)" class="px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-600 text-xs font-medium hover:bg-indigo-100 transition">{{t('copy')}}</button>
+            </div>
+          </td>
+          <td class="px-4 py-3">
+<div class="flex flex-wrap gap-1">
+<label class="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded cursor-pointer font-medium" :class="tkModelsArr(tk).length===0?'bg-green-50 text-green-600':'bg-gray-50 text-gray-400 hover:bg-gray-100'">
+<input type="checkbox" :checked="tkModelsArr(tk).length===0" @change="$event.target.checked && setTkAllModels(tk)" class="rounded text-green-600"> {{t('allModels')}}</label>
+<label v-for="m in myAvailableModels" :key="m" class="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded cursor-pointer" :class="tkModelsArr(tk).includes(m)?'bg-purple-50 text-purple-600':'bg-gray-50 text-gray-400 hover:bg-gray-100'">
+<input type="checkbox" :value="m" :checked="tkModelsArr(tk).includes(m)" @change="toggleTkModel(tk,m,$event)" class="rounded text-purple-600"> {{m}}</label>
+<span v-if="!myAvailableModels.length" class="text-xs text-gray-300">{{t('noAuthedModels')}}</span>
+</div>
+</td>
+          <td class="px-4 py-3 text-center text-xs">{{tk.quota_limit===-1?'∞':formatNum(tk.quota_used)+'/'+formatNum(tk.quota_limit)+' ('+t('quotaRemaining')+formatNum(bigSub(tk.quota_limit,tk.quota_used))+')'}}</td>
+          <td class="px-4 py-3 text-center">
+<span :class="['text-xs px-2 py-1 rounded-full',tk.enabled?'bg-green-50 text-green-600':'bg-red-50 text-red-500']">{{tk.enabled?t('active'):t('disabled')}}</span>
+</td>
+          <td class="px-4 py-3 text-center">
+            <button @click="toggleMyToken(tk)" class="text-xs text-indigo-600 hover:underline mr-1">{{tk.enabled?t('disable'):t('enable')}}</button>
+            <button @click="delMyToken(tk.id)" class="text-xs text-red-400 hover:underline">{{t('delete')}}</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+<div v-if="tab==='logs'">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-xl font-bold text-gray-800">{{t('logs')}}</h2>
+    <button @click="exportLogReport()" class="px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs hover:bg-green-700">📥 {{t('exportLogs')}}</button>
+  </div>
+  <!-- Filters -->
+  <div class="bg-white rounded-xl border p-4 mb-4">
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('filterModel')}}</label>
+<input v-model="logFilter.model" @keyup.enter="reloadLogs" class="w-full px-2 py-1.5 rounded-lg border text-xs" :placeholder="t('filterModel')">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('username')}}</label>
+<input v-model="logFilter.username" @keyup.enter="reloadLogs" class="w-full px-2 py-1.5 rounded-lg border text-xs" :placeholder="t('username')">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('filterStatus')}}</label>
+<select v-model="logFilter.status" @change="reloadLogs" class="w-full px-2 py-1.5 rounded-lg border text-xs">
+        <option value="">{{t('allStatus')}}</option>
+        <option value="1">{{t('successOnly')}}</option>
+        <option value="0">{{t('failOnly')}}</option>
+      </select>
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('channelName')}}</label>
+<select v-model="logFilter.channel_id" @change="reloadLogs" class="w-full px-2 py-1.5 rounded-lg border text-xs">
+        <option value="">{{t('allStatus')}}</option>
+        <option v-for="c in channels" :key="c.id" :value="c.id">{{c.name}}</option>
+      </select>
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('inputTok')}} min</label>
+<input v-model.number="logFilter.min_prompt" @keyup.enter="reloadLogs" type="number" class="w-full px-2 py-1.5 rounded-lg border text-xs" placeholder="0">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('inputTok')}} max</label>
+<input v-model.number="logFilter.max_prompt" @keyup.enter="reloadLogs" type="number" class="w-full px-2 py-1.5 rounded-lg border text-xs" placeholder="∞">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('outputTok')}} min</label>
+<input v-model.number="logFilter.min_completion" @keyup.enter="reloadLogs" type="number" class="w-full px-2 py-1.5 rounded-lg border text-xs" placeholder="0">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('outputTok')}} max</label>
+<input v-model.number="logFilter.max_completion" @keyup.enter="reloadLogs" type="number" class="w-full px-2 py-1.5 rounded-lg border text-xs" placeholder="∞">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('dateFrom')}}</label>
+<input v-model="logFilter.date_from" type="date" class="w-full px-2 py-1.5 rounded-lg border text-xs">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('dateTo')}}</label>
+<input v-model="logFilter.date_to" type="date" class="w-full px-2 py-1.5 rounded-lg border text-xs">
+</div>
+    </div>
+    <div class="mt-3 flex items-center gap-2">
+      <button @click="reloadLogs" class="px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-xs hover:bg-indigo-700">🔍 {{t('search')}}</button>
+      <button @click="resetLogFilter" class="px-4 py-1.5 rounded-lg border text-xs hover:bg-gray-50">{{t('resetFilter')}}</button>
+    </div>
+  </div>
+  <!-- Summary -->
+  <div v-if="logSummary" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
+    <div class="bg-white rounded-xl border p-3">
+<div class="text-xs text-gray-400">{{t('requests')}}</div>
+<div class="text-lg font-bold text-indigo-600">{{logSummary.total_requests}}</div>
+</div>
+    <div class="bg-white rounded-xl border p-3">
+<div class="text-xs text-gray-400">{{t('successRate')}}</div>
+<div class="text-lg font-bold text-green-600">{{logSummary.total_requests?Math.round(logSummary.success_requests/logSummary.total_requests*100):0}}%</div>
+</div>
+    <div class="bg-white rounded-xl border p-3">
+<div class="text-xs text-gray-400">{{t('inputTok')}}</div>
+<div class="text-lg font-bold text-emerald-600">{{formatNum(logSummary.total_prompt_tokens)}}</div>
+</div>
+    <div class="bg-white rounded-xl border p-3">
+<div class="text-xs text-gray-400">{{t('outputTok')}}</div>
+<div class="text-lg font-bold text-amber-600">{{formatNum(logSummary.total_completion_tokens)}}</div>
+</div>
+    <div class="bg-white rounded-xl border p-3">
+<div class="text-xs text-gray-400">{{t('latency')}}</div>
+<div class="text-lg font-bold text-blue-600">{{logSummary.avg_latency_ms}}ms</div>
+</div>
+  </div>
+  <div v-if="logs.length" class="bg-white rounded-xl border overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 border-b">
+<tr>
+        <th class="px-3 py-3 text-left text-xs font-medium text-gray-400">{{t('time')}}</th>
+        <th class="px-3 py-3 text-left text-xs font-medium text-gray-400">{{t('username')}}</th>
+        <th class="px-3 py-3 text-left text-xs font-medium text-gray-400">{{t('tokenName')}}</th>
+        <th class="px-3 py-3 text-left text-xs font-medium text-gray-400">{{t('channelName')}}</th>
+        <th class="px-3 py-3 text-left text-xs font-medium text-gray-400">{{t('model')}}</th>
+        <th class="px-3 py-3 text-center text-xs font-medium text-gray-400">{{t('streamType')}}</th>
+        <th class="px-3 py-3 text-center text-xs font-medium text-gray-400">{{t('inputTok')}}</th>
+        <th class="px-3 py-3 text-center text-xs font-medium text-gray-400">{{t('outputTok')}}</th>
+        <th class="px-3 py-3 text-center text-xs font-medium text-gray-400">{{t('latency')}}</th>
+        <th class="px-3 py-3 text-center text-xs font-medium text-gray-400">{{t('status')}}</th>
+        <th class="px-3 py-3 text-left text-xs font-medium text-gray-400">{{t('clientIP')}}</th>
+        <th class="px-3 py-3 text-left text-xs font-medium text-gray-400">{{t('errorMsg')}}</th>
+      </tr>
+</thead>
+      <tbody>
+        <tr v-for="l in logs" :key="l.id" class="border-b border-gray-50">
+          <td class="px-3 py-2 text-xs text-gray-400 whitespace-nowrap">{{fmtTime(l.created_at)}}</td>
+          <td class="px-3 py-2 text-xs">{{l.username}}</td>
+          <td class="px-3 py-2 text-xs font-mono">{{l.token_name||'-'}}</td>
+          <td class="px-3 py-2 text-xs">{{l.channel_name||'-'}}</td>
+          <td class="px-3 py-2 text-xs font-mono text-indigo-600">{{l.model}}</td>
+          <td class="px-3 py-2 text-center text-xs">{{l.is_stream?'Stream':'Sync'}}</td>
+          <td class="px-3 py-2 text-center text-xs">{{l.prompt_tokens}}</td>
+          <td class="px-3 py-2 text-center text-xs">{{l.completion_tokens}}</td>
+          <td class="px-3 py-2 text-center text-xs">{{l.latency_ms}}ms</td>
+          <td class="px-3 py-2 text-center">
+<span :class="l.success?'text-green-500':'text-red-500'" class="cursor-pointer" @click="l.success||showLogError(l)">{{l.success?'✓':'✗'}}</span>
+</td>
+          <td class="px-3 py-2 text-xs text-gray-400">{{l.client_ip||'-'}}</td>
+          <td class="px-3 py-2 text-xs text-gray-400 max-w-[200px] truncate">{{l.error_msg||'-'}}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="flex items-center justify-between px-4 py-3 border-t border-gray-50">
+      <span class="text-xs text-gray-400">{{logs.length}} / {{logsTotal}} {{t('totalTok').replace('Token','')}}</span>
+      <span v-if="logs.length>=logsTotal" class="text-xs text-gray-300">{{t('noMore')}}</span>
+    </div>
+  </div>
+  <div v-if="logs.length<logsTotal" class="mt-3 text-center">
+    <button @click="loadMoreLogs" class="px-6 py-2 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 ring-1 ring-indigo-200 transition">↓ {{t('loadMore')}} ({{logs.length}}/{{logsTotal}})</button>
+  </div>
+  <div v-else class="bg-white rounded-xl border p-12 text-center text-gray-300">{{t('noLogs')}}</div>
+</div>
+<div v-if="tab==='usage' && (isAdmin || isOperator)">
+  <h2 class="text-xl font-bold text-gray-800 mb-4">📈 {{t('usageAnalysis')}}</h2>
+  <div class="bg-white rounded-xl border p-4 mb-4">
+    <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('dateFrom')}}</label>
+<input v-model="usageFilter.date_from" type="date" class="w-full px-2 py-1.5 rounded-lg border text-xs">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('dateTo')}}</label>
+<input v-model="usageFilter.date_to" type="date" class="w-full px-2 py-1.5 rounded-lg border text-xs">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('filterUser')}}</label>
+<select v-model="usageFilter.user_id" class="w-full px-2 py-1.5 rounded-lg border text-xs">
+<option value="">{{t('all')}}</option>
+<option v-for="u in users" :key="u.id" :value="u.id">{{u.username}}</option>
+</select>
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('filterModel')}}</label>
+<input v-model="usageFilter.model" class="w-full px-2 py-1.5 rounded-lg border text-xs" :placeholder="t('filterModel')">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('filterChannel')}}</label>
+<select v-model="usageFilter.channel_id" class="w-full px-2 py-1.5 rounded-lg border text-xs">
+<option value="">{{t('all')}}</option>
+<option v-for="c in channels" :key="c.id" :value="c.id">{{c.name}}</option>
+</select>
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('groupBy')}}</label>
+<select v-model="usageFilter.group_by" class="w-full px-2 py-1.5 rounded-lg border text-xs">
+        <option value="day">{{t('groupByDay')}}</option>
+        <option value="user">{{t('groupByUser')}}</option>
+        <option value="model">{{t('groupByModel')}}</option>
+        <option value="channel">{{t('groupByChannel')}}</option>
+        <option value="detail">{{t('groupByDetail')}}</option>
+      </select>
+</div>
+      <div class="flex items-end gap-1">
+        <button @click="usageHasMore=false;loadUsage()" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs hover:bg-indigo-700">🔍</button>
+        <button @click="exportReport(usageFilter.group_by)" class="px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs hover:bg-green-700" :title="t('exportReport')">📥</button>
+        <button @click="exportAllUsage" class="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs hover:bg-amber-700" :title="t('exportAllUsage')">📊</button>
+      </div>
+    </div>
+  </div>
+  <!-- Summary Cards -->
+  <div v-if="usageSummary" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
+    <div class="bg-white rounded-xl border p-4">
+<div class="text-xs text-gray-400 mb-1">{{t('requests')}}</div>
+<div class="text-2xl font-bold text-indigo-600">{{usageSummary.total_requests}}</div>
+</div>
+    <div class="bg-white rounded-xl border p-4">
+<div class="text-xs text-gray-400 mb-1">{{t('successRate')}}</div>
+<div class="text-2xl font-bold text-green-600">{{usageSummary.total_requests?Math.round(usageSummary.success_requests/usageSummary.total_requests*100):0}}%</div>
+</div>
+    <div class="bg-white rounded-xl border p-4">
+<div class="text-xs text-gray-400 mb-1">{{t('inputTok')}}</div>
+<div class="text-2xl font-bold text-emerald-600">{{formatNum(usageSummary.total_prompt_tokens)}}</div>
+</div>
+    <div class="bg-white rounded-xl border p-4">
+<div class="text-xs text-gray-400 mb-1">{{t('outputTok')}}</div>
+<div class="text-2xl font-bold text-amber-600">{{formatNum(usageSummary.total_completion_tokens)}}</div>
+</div>
+    <div class="bg-white rounded-xl border p-4">
+<div class="text-xs text-gray-400 mb-1">{{t('latency')}}</div>
+<div class="text-2xl font-bold text-blue-600">{{usageSummary.avg_latency_ms}}ms</div>
+</div>
+  </div>
+  <!-- Usage Table -->
+  <div v-if="usageItems.length" class="bg-white rounded-xl border overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 border-b">
+<tr>
+        <template v-if="usageFilter.group_by==='detail'">
+          <th class="px-3 py-3 text-left text-xs font-medium text-gray-400">{{t('username')}}</th>
+          <th class="px-3 py-3 text-left text-xs font-medium text-gray-400">{{t('model')}}</th>
+          <th class="px-3 py-3 text-left text-xs font-medium text-gray-400">{{t('channelName')}}</th>
+        </template>
+        <template v-else>
+          <th class="px-4 py-3 text-left text-xs font-medium text-gray-400">{{t('dimension')}}</th>
+        </template>
+        <th class="px-3 py-3 text-center text-xs font-medium text-gray-400">{{t('requests')}}</th>
+        <th class="px-3 py-3 text-center text-xs font-medium text-gray-400">{{t('success')}}</th>
+        <th class="px-3 py-3 text-center text-xs font-medium text-gray-400">{{t('successRate')}}</th>
+        <th class="px-3 py-3 text-center text-xs font-medium text-gray-400">{{t('inputTok')}}</th>
+        <th class="px-3 py-3 text-center text-xs font-medium text-gray-400">{{t('outputTok')}}</th>
+        <th class="px-3 py-3 text-center text-xs font-medium text-gray-400">{{t('totalTok')}}</th>
+        <th class="px-3 py-3 text-center text-xs font-medium text-gray-400">{{t('latency')}}</th>
+      </tr>
+</thead>
+      <tbody>
+        <tr v-for="item in usageItems" :key="item.key" class="border-b border-gray-50">
+          <template v-if="usageFilter.group_by==='detail'">
+            <td class="px-3 py-2 font-medium text-sm">{{item.user}}</td>
+            <td class="px-3 py-2 text-sm">{{item.model}}</td>
+            <td class="px-3 py-2 text-sm">{{item.channel}}</td>
+          </template>
+          <template v-else>
+            <td class="px-4 py-2 font-medium text-sm">{{item.key}}</td>
+          </template>
+          <td class="px-3 py-2 text-center text-sm">{{item.requests}}</td>
+          <td class="px-3 py-2 text-center text-sm text-green-600">{{item.success}}</td>
+          <td class="px-3 py-2 text-center text-sm">{{item.requests?Math.round(item.success/item.requests*100):0}}%</td>
+          <td class="px-3 py-2 text-center text-sm text-emerald-600">{{formatNum(item.prompt_tokens)}}</td>
+          <td class="px-3 py-2 text-center text-sm text-amber-600">{{formatNum(item.completion_tokens)}}</td>
+          <td class="px-3 py-2 text-center text-sm font-medium">{{formatNum(item.total_tokens)}}</td>
+          <td class="px-3 py-2 text-center text-sm">{{item.avg_latency_ms}}ms</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div v-if="usageHasMore" class="mt-3 text-center">
+    <button @click="loadUsage(true)" class="px-6 py-2 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 ring-1 ring-indigo-200 transition">↓ {{t('loadMore')}} ({{usageItems.length}}/{{usageTotal}})</button>
+  </div>
+
+  <div v-if="!usageItems.length" class="bg-white rounded-xl border p-12 text-center text-gray-300">{{t('noData')}}</div>
+</div>
+<div v-if="tab==='myUsage'">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-xl font-bold text-gray-800">📈 {{t('myUsage')}}</h2>
+    <button @click="exportMyReport(myUsageFilter.group_by)" class="px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs hover:bg-green-700">📥 {{t('exportReport')}}</button>
+  </div>
+  <div class="bg-white rounded-xl border p-4 mb-4">
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('dateFrom')}}</label>
+<input v-model="myUsageFilter.date_from" type="date" class="w-full px-2 py-1.5 rounded-lg border text-xs">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('dateTo')}}</label>
+<input v-model="myUsageFilter.date_to" type="date" class="w-full px-2 py-1.5 rounded-lg border text-xs">
+</div>
+      <div>
+<label class="text-xs text-gray-400 block mb-1">{{t('groupBy')}}</label>
+<select v-model="myUsageFilter.group_by" class="w-full px-2 py-1.5 rounded-lg border text-xs">
+        <option value="day">{{t('groupByDay')}}</option>
+        <option value="model">{{t('groupByModel')}}</option>
+      </select>
+</div>
+      <div class="flex items-end">
+<button @click="loadMyUsage" class="px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-xs hover:bg-indigo-700">🔍 {{t('search')}}</button>
+</div>
+    </div>
+  </div>
+  <div v-if="myUsageSummary" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
+    <div class="bg-white rounded-xl border p-4">
+<div class="text-xs text-gray-400 mb-1">{{t('requests')}}</div>
+<div class="text-2xl font-bold text-indigo-600">{{myUsageSummary.total_requests}}</div>
+</div>
+    <div class="bg-white rounded-xl border p-4">
+<div class="text-xs text-gray-400 mb-1">{{t('successRate')}}</div>
+<div class="text-2xl font-bold text-green-600">{{myUsageSummary.total_requests?Math.round(myUsageSummary.success_requests/myUsageSummary.total_requests*100):0}}%</div>
+</div>
+    <div class="bg-white rounded-xl border p-4">
+<div class="text-xs text-gray-400 mb-1">{{t('inputTok')}}</div>
+<div class="text-2xl font-bold text-emerald-600">{{formatNum(myUsageSummary.total_prompt_tokens)}}</div>
+</div>
+    <div class="bg-white rounded-xl border p-4">
+<div class="text-xs text-gray-400 mb-1">{{t('outputTok')}}</div>
+<div class="text-2xl font-bold text-amber-600">{{formatNum(myUsageSummary.total_completion_tokens)}}</div>
+</div>
+    <div class="bg-white rounded-xl border p-4">
+<div class="text-xs text-gray-400 mb-1">{{t('latency')}}</div>
+<div class="text-2xl font-bold text-blue-600">{{myUsageSummary.avg_latency_ms}}ms</div>
+</div>
+  </div>
+  <div v-if="myUsageItems.length" class="bg-white rounded-xl border overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 border-b">
+<tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-400">{{t('dimension')}}</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-400">{{t('requests')}}</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-400">{{t('successRate')}}</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-400">{{t('inputTok')}}</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-400">{{t('outputTok')}}</th>
+        <th class="px-4 py-3 text-center text-xs font-medium text-gray-400">{{t('latency')}}</th>
+      </tr>
+</thead>
+      <tbody>
+        <tr v-for="item in myUsageItems" :key="item.key" class="border-b border-gray-50">
+          <td class="px-4 py-2 font-medium text-sm">{{item.key}}</td>
+          <td class="px-4 py-2 text-center text-sm">{{item.requests}}</td>
+          <td class="px-4 py-2 text-center text-sm">{{item.requests?Math.round(item.success/item.requests*100):0}}%</td>
+          <td class="px-4 py-2 text-center text-sm text-emerald-600">{{formatNum(item.prompt_tokens)}}</td>
+          <td class="px-4 py-2 text-center text-sm text-amber-600">{{formatNum(item.completion_tokens)}}</td>
+          <td class="px-4 py-2 text-center text-sm">{{item.avg_latency_ms}}ms</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div v-if="myUsageHasMore" class="mt-3 text-center">
+    <button @click="loadMyUsage(true)" class="px-6 py-2 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 ring-1 ring-indigo-200 transition">↓ {{t('loadMore')}} ({{myUsageItems.length}}/{{myUsageTotal}})</button>
+  </div>
+
+  <div v-if="!myUsageItems.length" class="bg-white rounded-xl border p-12 text-center text-gray-300">{{t('noData')}}</div>
+</div>
+<div v-if="tab==='notifications'" class="space-y-3">
+  <!-- Header -->
+  <div class="flex items-center justify-between">
+    <h2 class="text-xl font-bold text-gray-800">🔔 {{t('notifications')}}</h2>
+    <div class="flex gap-2">
+      <button v-if="notifTab==='inbox' && unreadCount>0" @click="markAllRead" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700">{{t('markAllRead')}}</button>
+      <button v-if="isAdmin" @click="showSendNotif=true" class="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700">+ {{t('sendNotif')}}</button>
+    </div>
+  </div>
+
+  <!-- Tab -->
+  <div class="flex gap-1 bg-gray-100 rounded-xl p-1">
+    <button @click="notifTab='inbox';loadNotifications()" :class="['flex-1 py-2 rounded-lg text-sm font-medium transition',notifTab==='inbox'?'bg-white shadow text-indigo-700':'text-[#8b949e] hover:text-gray-700']">📥 {{t('inboxTab')}} <span v-if="unreadCount>0" class="ml-1 bg-red-500 text-white text-xs px-1.5 rounded-full">{{unreadCount>99?'99+':unreadCount}}</span>
+</button>
+    <button v-if="isAdmin" @click="notifTab='sent';loadSentNotifications()" :class="['flex-1 py-2 rounded-lg text-sm font-medium transition',notifTab==='sent'?'bg-white shadow text-indigo-700':'text-[#8b949e] hover:text-gray-700']">📤 {{t('sentTab')}}</button>
+  </div>
+
+  <!-- Filters -->
+  <div class="flex gap-2 flex-wrap">
+    <select v-model="notifFilter.category" @change="notifTab==='inbox'?loadNotifications():loadSentNotifications()" class="px-3 py-1.5 rounded-lg border text-sm bg-white">
+      <option value="">{{t('all')}}</option>
+      <option value="fault">🔴 {{t('faultNotif')}}</option>
+      <option value="recovery">🟢 {{t('recoveryNotif')}}</option>
+      <option value="info">🔵 {{t('infoNotif')}}</option>
+    </select>
+    <select v-if="notifTab==='inbox'" v-model="notifFilter.read" @change="loadNotifications" class="px-3 py-1.5 rounded-lg border text-sm bg-white">
+      <option value="">{{t('all')}}</option>
+      <option value="false">{{t('unread')}}</option>
+      <option value="true">{{t('read')}}</option>
+    </select>
+  </div>
+
+  <!-- Inbox -->
+  <template v-if="notifTab==='inbox'">
+    <div v-if="!notifItems.length" class="bg-white rounded-xl border p-10 text-center text-gray-300 text-sm">📭 {{t('noNotifications')}}</div>
+    <div v-for="n in notifItems" :key="n.id" :class="['rounded-xl border p-4 transition cursor-pointer',n.read?'bg-gray-50 opacity-60':'bg-white shadow-sm','border-l-4',n.category==='fault'?'border-l-red-500':n.category==='recovery'?'border-l-emerald-500':'border-l-blue-400']" @click="!n.read&&markRead(n.id)">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span v-if="n.category==='fault'" class="text-red-500 text-xs font-semibold bg-red-50 px-2 py-0.5 rounded">🔴 {{t('faultNotif')}}</span>
+            <span v-else-if="n.category==='recovery'" class="text-emerald-600 text-xs font-semibold bg-emerald-50 px-2 py-0.5 rounded">🟢 {{t('recoveryNotif')}}</span>
+            <span v-else class="text-blue-500 text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded">🔵 {{t('infoNotif')}}</span>
+            <span class="font-semibold text-sm text-gray-800">{{n.title}}</span>
+            <span v-if="!n.read" class="bg-red-500 text-white text-xs px-1.5 rounded-full animate-pulse">NEW</span>
+          </div>
+          <div v-if="n.content" class="mt-1.5 text-sm text-[#8b949e] whitespace-pre-wrap line-clamp-2">{{n.content}}</div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <span class="text-xs text-gray-300">{{fmtTime(n.created_at)}}</span>
+          <button @click.stop="delNotif(n.id)" class="text-gray-300 hover:text-red-500 text-sm p-1 rounded hover:bg-red-50" title="删除">✕</button>
+        </div>
+      </div>
+    </div>
+    <div v-if="notifItems.length<notifTotal" class="text-center py-2">
+      <button @click="loadMoreNotif" class="text-sm text-indigo-500 hover:underline">{{t('loadMore')}}</button>
+    </div>
+  </template>
+
+  <!-- Sent (Admin) -->
+  <template v-if="notifTab==='sent' && isAdmin">
+    <div v-if="!sentItems.length" class="bg-white rounded-xl border p-10 text-center text-gray-300 text-sm">📭 {{t('noNotifications')}}</div>
+    <div v-for="n in sentItems" :key="n.id" :class="['bg-white rounded-xl border p-4 border-l-4',n.category==='fault'?'border-l-red-500':n.category==='recovery'?'border-l-emerald-500':'border-l-emerald-400']">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span v-if="n.category==='fault'" class="text-red-500 text-xs font-semibold bg-red-50 px-2 py-0.5 rounded">🔴 {{t('faultNotif')}}</span>
+            <span v-else-if="n.category==='recovery'" class="text-emerald-600 text-xs font-semibold bg-emerald-50 px-2 py-0.5 rounded">🟢 {{t('recoveryNotif')}}</span>
+            <span v-else class="text-blue-500 text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded">🔵 {{t('infoNotif')}}</span>
+            <span class="font-semibold text-sm text-gray-800">{{n.title}}</span>
+          </div>
+          <div v-if="n.content" class="mt-1.5 text-sm text-[#8b949e] whitespace-pre-wrap line-clamp-2">{{n.content}}</div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <span class="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">👥 {{n.recipient_count||1}}</span>
+          <span class="text-xs text-gray-300">{{fmtTime(n.created_at)}}</span>
+          <button @click.stop="delSentNotif(n.id)" class="text-gray-300 hover:text-red-500 text-sm p-1 rounded hover:bg-red-50" title="删除">✕</button>
+        </div>
+      </div>
+    </div>
+    <div v-if="sentItems.length<sentTotal" class="text-center py-2">
+      <button @click="loadMoreNotif" class="text-sm text-indigo-500 hover:underline">{{t('loadMore')}}</button>
+    </div>
+  </template>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div v-if="showDelConfirm" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" @click.self="showDelConfirm=false">
+  <div class="bg-white rounded-2xl p-6 w-96 shadow-xl">
+    <h3 class="font-bold text-gray-800 mb-2">⚠️ {{delConfirmTitle}}</h3>
+    <p class="text-sm text-[#8b949e] mb-4">{{delConfirmMsg}}</p>
+    <div class="flex justify-end gap-3">
+      <button @click="showDelConfirm=false" class="px-4 py-2 rounded-lg text-sm border hover:bg-gray-50">{{t('cancel')}}</button>
+      <button @click="doDelConfirm" :class="['px-4 py-2 rounded-lg text-sm text-white',delConfirmDanger?'bg-red-600 hover:bg-red-700':'bg-indigo-600 hover:bg-indigo-700']">{{delConfirmBtn}}</button>
+    </div>
+  </div>
+</div>
+
+<!-- Send Notification Modal -->
+<div v-if="showSendNotif" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" @click.self="showSendNotif=false">
+  <div class="bg-white rounded-2xl p-6 w-[480px] shadow-xl">
+    <h3 class="font-bold text-gray-800 mb-4">📢 {{t('sendNotif')}}</h3>
+    <div class="space-y-3">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">{{t('notifCategory')}}</label>
+        <select v-model="sendNotifForm.category" class="w-full px-3 py-2 rounded-lg border text-sm">
+          <option value="info">🔵 {{t('infoNotif')}}</option>
+          <option value="fault">🔴 {{t('faultNotif')}}</option>
+          <option value="recovery">🟢 {{t('recoveryNotif')}}</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">{{t('notifTitle')}}</label>
+        <input v-model="sendNotifForm.title" class="w-full px-3 py-2 rounded-lg border text-sm" :placeholder="t('notifTitlePh')">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">{{t('notifContent')}}</label>
+        <textarea v-model="sendNotifForm.content" class="w-full px-3 py-2 rounded-lg border text-sm h-24 resize-none" :placeholder="t('notifContentPh')">
+</textarea>
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">{{t('notifReceiver')}}</label>
+        <select v-model="sendNotifForm.mode" class="w-full px-3 py-2 rounded-lg border text-sm">
+          <option value="broadcast">📢 {{t('broadcastAll')}}</option>
+          <option value="single">👤 {{t('singleUser')}}</option>
+          <option value="batch">👥 {{t('batchUsers')}}</option>
+        </select>
+      </div>
+      <div v-if="sendNotifForm.mode==='single'">
+        <label class="text-xs text-gray-400 block mb-1">{{t('selectUser')}}</label>
+        <select v-model="sendNotifForm.receiver_id" class="w-full px-3 py-2 rounded-lg border text-sm">
+          <option :value="null">--</option>
+          <option v-for="u in users" :key="u.id" :value="u.id">{{u.username}} ({{u.role}})</option>
+        </select>
+      </div>
+      <div v-if="sendNotifForm.mode==='batch'">
+        <label class="text-xs text-gray-400 block mb-1">{{t('selectUsers')}}</label>
+        <div class="max-h-40 overflow-y-auto border rounded-lg p-2 space-y-1">
+          <label v-for="u in users" :key="u.id" class="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" :value="u.id" v-model="sendNotifForm.receiver_ids" class="rounded">
+            <span>{{u.username}} ({{u.role}})</span>
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="flex justify-end gap-3 mt-4">
+      <button @click="showSendNotif=false" class="px-4 py-2 rounded-lg text-sm border hover:bg-gray-50">{{t('cancel')}}</button>
+      <button @click="doSendNotif" class="px-4 py-2 rounded-lg text-sm bg-emerald-600 text-white hover:bg-emerald-700">{{t('send')}}</button>
+    </div>
+  </div></div>
+
+<div v-if="tab==='settings' && isSuperAdmin" class="max-w-5xl">
+  <h2 class="text-xl font-bold text-gray-800 mb-6">⚙️ {{t('sysSettings')}}</h2>
+  <div class="space-y-5">
+
+  <!-- Security -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div class="bg-gradient-to-r from-indigo-50 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">🔒</span>
+<span class="font-semibold text-indigo-700 text-sm">{{t('secSettings')}}</span>
+</div>
+    <div class="p-5 grid grid-cols-3 gap-x-8 gap-y-4">
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('jwtExpire')}}</label>
+        <div class="flex items-center gap-1">
+<input v-model.number="sysSet.jwt_expire_hours" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition">
+<span class="text-xs text-gray-400">h</span>
+</div>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('corsOrigins')}}</label>
+        <input v-model="sysSet.cors_origins" type="text" placeholder="*" class="w-full px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('minPwdLen')}}</label>
+        <div class="flex items-center gap-1">
+<input v-model.number="sysSet.min_password_length" type="number" min="6" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition">
+<span class="text-xs text-gray-400">位</span>
+</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Proxy -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div class="bg-gradient-to-r from-blue-50 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">🌐</span>
+<span class="font-semibold text-blue-700 text-sm">{{t('proxySettings')}}</span>
+</div>
+    <div class="p-5 grid grid-cols-5 gap-x-6 gap-y-4">
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('proxyTimeout')}}</label>
+        <div class="flex items-center gap-1">
+<input v-model.number="sysSet.proxy_timeout" type="number" min="5" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none transition">
+<span class="text-xs text-gray-400">s</span>
+</div>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('proxyMaxConn')}}</label>
+        <input v-model.number="sysSet.proxy_max_connections" type="number" min="1" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none transition">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('proxyMaxKeepalive')}}</label>
+        <input v-model.number="sysSet.proxy_max_keepalive" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none transition">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('proxyKeepaliveExp')}}</label>
+        <div class="flex items-center gap-1">
+<input v-model.number="sysSet.proxy_keepalive_expiry" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none transition">
+<span class="text-xs text-gray-400">s</span>
+</div>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('proxyRetry')}}</label>
+        <input v-model.number="sysSet.proxy_retry_count" type="number" min="0" max="5" class="w-16 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none transition">
+      </div>
+    </div>
+  </div>
+
+  <!-- Cache -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div class="bg-gradient-to-r from-amber-50 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">⚡</span>
+<span class="font-semibold text-amber-700 text-sm">{{t('cacheSettings')}}</span>
+</div>
+    <div class="p-5 grid grid-cols-3 gap-x-8 gap-y-4">
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('cacheEnabled')}}</label>
+        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+<input type="checkbox" v-model="sysSet.cache_enabled" class="rounded text-indigo-600 w-4 h-4">
+<span class="text-sm" :class="sysSet.cache_enabled?'text-green-600 font-medium':'text-gray-400'">{{sysSet.cache_enabled?t('open'):t('closed')}}</span>
+</label>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('cacheTTL')}}</label>
+        <div class="flex items-center gap-1">
+<input v-model.number="sysSet.cache_ttl" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-amber-200 focus:border-amber-400 outline-none transition">
+<span class="text-xs text-gray-400">s</span>
+</div>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('cacheMaxEntries')}}</label>
+        <input v-model.number="sysSet.cache_max_entries" type="number" min="100" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-amber-200 focus:border-amber-400 outline-none transition">
+      </div>
+    </div>
+  </div>
+
+  <!-- Rate Limit -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div class="bg-gradient-to-r from-rose-50 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">🚦</span>
+<span class="font-semibold text-rose-700 text-sm">{{t('rateLimitSettings')}}</span>
+</div>
+    <div class="p-5 grid grid-cols-3 gap-x-8 gap-y-4">
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('rateLimitEnabled')}}</label>
+        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+<input type="checkbox" v-model="sysSet.rate_limit_enabled" class="rounded text-indigo-600 w-4 h-4">
+<span class="text-sm" :class="sysSet.rate_limit_enabled?'text-green-600 font-medium':'text-gray-400'">{{sysSet.rate_limit_enabled?t('open'):t('closed')}}</span>
+</label>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('rateLimitRpm')}}</label>
+        <input v-model.number="sysSet.rate_limit_rpm" type="number" min="1" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-rose-200 focus:border-rose-400 outline-none transition">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('rateLimitIpRpm')}}</label>
+        <input v-model.number="sysSet.rate_limit_ip_rpm" type="number" min="1" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-rose-200 focus:border-rose-400 outline-none transition">
+      </div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div class="bg-gradient-to-r from-emerald-50 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">📋</span>
+<span class="font-semibold text-emerald-700 text-sm">{{t('logSettings')}}</span>
+</div>
+    <div class="p-5">
+      <div class="grid grid-cols-3 gap-x-8 gap-y-4 mb-4">
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('logBatchSize')}}</label>
+          <input v-model.number="sysSet.log_batch_size" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('logBatchInterval')}}</label>
+          <div class="flex items-center gap-1">
+<input v-model.number="sysSet.log_batch_interval" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+<span class="text-xs text-gray-400">s</span>
+</div>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('logRetention')}}</label>
+          <div class="flex items-center gap-1">
+<input v-model.number="sysSet.log_retention_days" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+<span class="text-xs text-gray-400">天</span>
+</div>
+        </div>
+      </div>
+      <div class="border-t pt-4 grid grid-cols-3 gap-x-8 gap-y-4">
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('logCleanupInterval')}}</label>
+          <div class="flex items-center gap-1">
+<input v-model.number="sysSet.log_cleanup_interval_hours" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+<span class="text-xs text-gray-400">h</span>
+</div>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('logCleanupBatch')}}</label>
+          <input v-model.number="sysSet.log_cleanup_batch_size" type="number" min="100" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('errorLogMax')}}</label>
+          <input v-model.number="sysSet.error_log_max_entries" type="number" min="100" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+        </div>
+        <div>
+          <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('errorLogMaxDays')}}</label>
+          <input v-model.number="sysSet.error_log_max_days" type="number" min="1" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Registration -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div class="bg-gradient-to-r from-violet-50 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">👤</span>
+<span class="font-semibold text-violet-700 text-sm">{{t('regSettings')}}</span>
+</div>
+    <div class="p-5 grid grid-cols-4 gap-x-8 gap-y-4">
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('allowRegister')}}</label>
+        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+<input type="checkbox" v-model="sysSet.allow_register" class="rounded text-indigo-600 w-4 h-4">
+<span class="text-sm" :class="sysSet.allow_register?'text-green-600 font-medium':'text-gray-400'">{{sysSet.allow_register?t('open'):t('closed')}}</span>
+</label>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('defMaxTokens')}}</label>
+        <input v-model.number="sysSet.default_max_tokens" type="number" min="0" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-violet-200 focus:border-violet-400 outline-none transition">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('defTokenQuota')}}</label>
+        <input v-model.number="sysSet.default_token_quota" type="number" class="w-24 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-violet-200 focus:border-violet-400 outline-none transition">
+        <span class="text-xs text-gray-300 ml-1">(-1=∞)</span>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('defGroup')}}</label>
+        <select v-model="sysSet.default_group" class="px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-violet-200 focus:border-violet-400 outline-none transition">
+<option value="">--</option>
+<option v-for="g in sysSet.groups" :key="g.id" :value="g.name">{{g.name}}</option>
+</select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Heartbeat -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div class="bg-gradient-to-r from-pink-50 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">💓</span>
+<span class="font-semibold text-pink-700 text-sm">{{t('heartSettings')}}</span>
+</div>
+    <div class="p-5 grid grid-cols-4 gap-x-8 gap-y-4">
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('heartEnabled')}}</label>
+        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+<input type="checkbox" v-model="sysSet.heartbeat_enabled" class="rounded text-indigo-600 w-4 h-4">
+<span class="text-sm" :class="sysSet.heartbeat_enabled?'text-green-600 font-medium':'text-gray-400'">{{sysSet.heartbeat_enabled?t('open'):t('closed')}}</span>
+</label>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('heartAutoDisable')}}</label>
+        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+<input type="checkbox" v-model="sysSet.heartbeat_auto_disable" class="rounded text-indigo-600 w-4 h-4">
+<span class="text-sm" :class="sysSet.heartbeat_auto_disable?'text-green-600 font-medium':'text-amber-500 font-medium'">{{sysSet.heartbeat_auto_disable?t('autoDisableOn'):t('autoDisableOff')}}</span>
+</label>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('heartInterval')}}</label>
+        <div class="flex items-center gap-1">
+<input v-model.number="sysSet.heartbeat_interval" type="number" min="10" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-pink-200 focus:border-pink-400 outline-none transition">
+<span class="text-xs text-gray-400">s</span>
+</div>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-[#8b949e] block mb-1.5">{{t('heartTimeout')}}</label>
+        <div class="flex items-center gap-1">
+<input v-model.number="sysSet.heartbeat_timeout" type="number" min="1" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm focus:ring-2 focus:ring-pink-200 focus:border-pink-400 outline-none transition">
+<span class="text-xs text-gray-400">s</span>
+</div>
+      </div>
+    </div>
+    <div class="px-5 pb-4">
+      <p class="text-xs text-gray-400">{{t('heartAutoDisableTip')}}</p>
+    </div>
+  </div>
+
+  <!-- Read-only -->
+  <div class="bg-white rounded-xl border shadow-sm overflow-hidden opacity-60">
+    <div class="bg-gradient-to-r from-gray-100 to-white px-5 py-3 border-b flex items-center gap-2">
+<span class="text-lg">🔒</span>
+<span class="font-semibold text-[#8b949e] text-sm">{{t('readonlySettings')}} <span class="text-xs font-normal text-gray-400 ml-2">{{t('readonlyCfg')}}</span>
+</span>
+</div>
+    <div class="p-5 grid grid-cols-5 gap-x-6 gap-y-4">
+      <div>
+        <label class="text-xs font-medium text-gray-400 block mb-1.5">{{t('serverHost')}}</label>
+        <input :value="sysSet.server_host" type="text" disabled class="w-full px-2.5 py-1.5 rounded-lg border text-sm bg-gray-50 cursor-not-allowed">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-400 block mb-1.5">{{t('serverPort')}}</label>
+        <input :value="sysSet.server_port" type="number" disabled class="w-20 px-2.5 py-1.5 rounded-lg border text-sm bg-gray-50 cursor-not-allowed">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-400 block mb-1.5">{{t('serverWorkers')}}</label>
+        <input :value="sysSet.server_workers" type="number" disabled class="w-16 px-2.5 py-1.5 rounded-lg border text-sm bg-gray-50 cursor-not-allowed">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-400 block mb-1.5">{{t('timezoneOffset')}}</label>
+        <input v-model.number="sysSet.timezone_offset" type="number" class="w-20 px-2.5 py-1.5 rounded-lg border text-sm">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-400 block mb-1.5">{{t('dbPool')}}</label>
+        <input :value="sysSet.db_pool_size" type="number" disabled class="w-20 px-2.5 py-1.5 rounded-lg border text-sm bg-gray-50 cursor-not-allowed">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-400 block mb-1.5">{{t('dbOverflow')}}</label>
+        <input :value="sysSet.db_max_overflow" type="number" disabled class="w-20 px-2.5 py-1.5 rounded-lg border text-sm bg-gray-50 cursor-not-allowed">
+      </div>
+    </div>
+  </div>
+
+  </div>
+<!-- end space-y-5 -->
+  <div class="mt-6 flex justify-end">
+<button @click="saveSettings" class="px-8 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm hover:shadow">💾 {{t('save')}}</button>
+</div>
+</div>
+<div v-if="tab==='guide'" class="max-w-4xl">
+  <h2 class="text-xl font-bold text-gray-800 mb-6">📖 {{t('guide')}}</h2>
+  <div class="space-y-4">
+
+    <!-- 环境配置 -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-emerald-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-emerald-500 text-white text-xs font-bold flex items-center justify-center">1</span>
+        <span class="font-semibold text-emerald-700 text-sm">{{t('guide1Title')}}</span>
+      </div>
+      <div class="p-5">
+        <div class="bg-[#0d1117] rounded-lg p-4 text-sm font-mono text-[#c9d1d9] border border-gray-800 space-y-1">
+          <p>
+<span class="text-[#8b949e]"># 设置 API 地址</span>
+</p>
+          <p>
+<span class="text-[#79c0ff]">export</span> <span class="text-[#ffa657]">OPENAI_BASE_URL</span>=<span class="text-[#7ee787]">http://your-server:65000/v1</span>
+</p>
+          <p>
+<span class="text-[#8b949e]"># 设置 API Key</span>
+</p>
+          <p>
+<span class="text-[#79c0ff]">export</span> <span class="text-[#ffa657]">OPENAI_API_KEY</span>=<span class="text-[#7ee787]">sk-your-token-here</span>
+</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Python -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-blue-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center">2</span>
+        <span class="font-semibold text-blue-700 text-sm">Python (OpenAI SDK)</span>
+      </div>
+      <div class="p-5">
+        <div class="bg-[#0d1117] rounded-lg p-4 text-sm font-mono text-[#c9d1d9] border border-gray-800 space-y-1">
+          <p>
+<span class="text-[#79c0ff]">from</span> openai <span class="text-[#79c0ff]">import</span> OpenAI</p>
+          <p>
+</p>
+          <p>client = <span class="text-[#ffa657]">OpenAI</span>()</p>
+          <p>response = client.chat.completions.<span class="text-[#ffa657]">create</span>(</p>
+          <p>  model=<span class="text-[#7ee787]">"your-model"</span>,</p>
+          <p>  messages=[{<span class="text-[#7ee787]">"role"</span>: <span class="text-[#7ee787]">"user"</span>, <span class="text-[#7ee787]">"content"</span>: <span class="text-[#7ee787]">"Hello!"</span>}]</p>
+          <p>)</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- cURL -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-orange-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-orange-500 text-white text-xs font-bold flex items-center justify-center">3</span>
+        <span class="font-semibold text-orange-700 text-sm">cURL</span>
+      </div>
+      <div class="p-5">
+        <div class="bg-[#0d1117] rounded-lg p-4 text-sm font-mono text-[#c9d1d9] border border-gray-800 space-y-1 overflow-x-auto">
+          <p>curl http://your-server:65000/v1/chat/completions <span class="text-[#8b949e]">\</span>
+</p>
+          <p>  -H <span class="text-[#7ee787]">"Authorization: Bearer sk-your-token"</span> <span class="text-[#8b949e]">\</span>
+</p>
+          <p>  -H <span class="text-[#7ee787]">"Content-Type: application/json"</span> <span class="text-[#8b949e]">\</span>
+</p>
+          <p>  -d <span class="text-[#7ee787]">'{"model":"your-model","messages":[{"role":"user","content":"Hi"}]}'</span>
+</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- IDE 工具 -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-violet-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-violet-500 text-white text-xs font-bold flex items-center justify-center">4</span>
+        <span class="font-semibold text-violet-700 text-sm">Lobster / Cursor / Copilot</span>
+      </div>
+      <div class="p-5">
+        <div class="bg-[#0d1117] rounded-lg p-4 text-sm font-mono text-[#c9d1d9] border border-gray-800 space-y-1">
+          <p>
+<span class="text-[#ffa657]">API Base URL</span>: <span class="text-[#7ee787]">http://your-server:65000/v1</span>
+</p>
+          <p>
+<span class="text-[#ffa657]">API Key</span>: <span class="text-[#7ee787]">sk-your-token</span>
+</p>
+          <p>
+<span class="text-[#ffa657]">Model</span>: <span class="text-[#7ee787]">选择已授权的模型名称</span>
+</p>
+        </div>
+        <p class="text-xs text-gray-400 mt-2">在工具的设置中填入以上信息即可接入，兼容 OpenAI API 格式。</p>
+      </div>
+    </div>
+
+    <!-- NextChat -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-cyan-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-cyan-500 text-white text-xs font-bold flex items-center justify-center">5</span>
+        <span class="font-semibold text-cyan-700 text-sm">NextChat / ChatGPT-Next-Web</span>
+      </div>
+      <div class="p-5">
+        <div class="bg-[#0d1117] rounded-lg p-4 text-sm font-mono text-[#c9d1d9] border border-gray-800 space-y-1">
+          <p>
+<span class="text-[#8b949e]"># 设置 → 自定义接口</span>
+</p>
+          <p>
+<span class="text-[#ffa657]">接口地址</span>: <span class="text-[#7ee787]">http://your-server:65000</span>
+</p>
+          <p>
+<span class="text-[#ffa657]">API Key</span>: <span class="text-[#7ee787]">sk-your-token</span>
+</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- LobeChat -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-rose-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-rose-500 text-white text-xs font-bold flex items-center justify-center">6</span>
+        <span class="font-semibold text-rose-700 text-sm">LobeChat</span>
+      </div>
+      <div class="p-5">
+        <div class="bg-[#0d1117] rounded-lg p-4 text-sm font-mono text-[#c9d1d9] border border-gray-800 space-y-1">
+          <p>
+<span class="text-[#8b949e]"># 语言模型 → OpenAI</span>
+</p>
+          <p>
+<span class="text-[#ffa657]">Endpoint</span>: <span class="text-[#7ee787]">http://your-server:65000/v1</span>
+</p>
+          <p>
+<span class="text-[#ffa657]">API Key</span>: <span class="text-[#7ee787]">sk-your-token</span>
+</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 流式调用 -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-indigo-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-indigo-500 text-white text-xs font-bold flex items-center justify-center">7</span>
+        <span class="font-semibold text-indigo-700 text-sm">Stream 流式调用</span>
+      </div>
+      <div class="p-5">
+        <div class="bg-[#0d1117] rounded-lg p-4 text-sm font-mono text-[#c9d1d9] border border-gray-800 space-y-1">
+          <p>client.chat.completions.<span class="text-[#ffa657]">create</span>(</p>
+          <p>  model=<span class="text-[#7ee787]">"your-model"</span>,</p>
+          <p>  messages=[...],</p>
+          <p>  <span class="text-[#ffa657]">stream</span>=<span class="text-[#79c0ff]">True</span>  <span class="text-[#8b949e]"># 启用流式</span>
+</p>
+          <p>)</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 更多端点 -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-amber-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center">8</span>
+        <span class="font-semibold text-amber-700 text-sm">更多 API 端点</span>
+      </div>
+      <div class="p-5">
+        <div class="text-sm text-gray-600 space-y-2">
+          <p class="font-medium text-gray-700">除 Chat 对话外，还支持以下 OpenAI 兼容端点：</p>
+          <div class="bg-gray-50 rounded-lg p-3 space-y-1.5 text-xs font-mono">
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/embeddings <span class="text-gray-400">— 文本向量化</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/images/generations <span class="text-gray-400">— 图片生成</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/images/edits <span class="text-gray-400">— 图片编辑</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/images/variations <span class="text-gray-400">— 图片变体</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/audio/speech <span class="text-gray-400">— TTS 语音合成</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/audio/transcriptions <span class="text-gray-400">— 语音转写</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/audio/translations <span class="text-gray-400">— 语音翻译</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/videos/generations <span class="text-gray-400">— 视频生成</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/moderations <span class="text-gray-400">— 内容审核</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold"> GET</span> /v1/models <span class="text-gray-400">— 模型列表</span>
+</p>
+          </div>
+          <p class="text-xs text-gray-400 mt-2">所有端点均支持计费（按 token / 按张 / 按音频大小），需上游 API 支持对应能力。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 计费说明 -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-teal-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-teal-500 text-white text-xs font-bold flex items-center justify-center">9</span>
+        <span class="font-semibold text-teal-700 text-sm">计费说明</span>
+      </div>
+      <div class="p-5">
+        <div class="text-sm text-gray-600 space-y-2">
+          <div class="bg-gray-50 rounded-lg p-3 space-y-1.5 text-xs">
+            <p>
+<span class="font-bold text-gray-700">Chat/Completions：</span>本地 tiktoken 计算 prompt + 上游 usage 计算 completion（含思考模型的 reasoning_tokens）</p>
+            <p>
+<span class="font-bold text-gray-700">Embeddings：</span>优先上游 usage，fallback tiktoken 估算</p>
+            <p>
+<span class="font-bold text-gray-700">Images：</span>按张数估算（每张约 1000 tokens）</p>
+            <p>
+<span class="font-bold text-gray-700">Audio TTS：</span>按音频大小估算</p>
+            <p>
+<span class="font-bold text-gray-700">Audio 转写：</span>优先上游 usage，fallback tiktoken</p>
+            <p>
+<span class="font-bold text-gray-700">Video：</span>优先上游 usage，fallback 估算</p>
+          </div>
+          <p class="text-xs text-gray-400">额度批量扣费（5秒间隔），关闭服务时自动结算剩余。</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+<div v-if="mrlEditor.show" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50" @click.self="mrlEditor.show=false">
+  <div class="bg-white rounded-2xl shadow-2xl w-[480px] max-h-[80vh] overflow-hidden" @click.stop>
+    <div class="px-5 py-4 border-b flex items-center justify-between"><h3 class="text-lg font-bold text-gray-800">模型访问策略</h3><button @click="mrlEditor.show=false" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button></div>
+    <div class="p-5 overflow-y-auto max-h-[55vh] space-y-3">
+      <div v-for="(rule,idx) in mrlEditor.rules" :key="idx" class="flex items-center gap-2 bg-gray-50 rounded-lg p-3"><div class="flex-1"><select v-model="rule.model" class="w-full px-2 py-1.5 rounded border text-sm"><option value="*">* (其他模型)</option><option v-for="m in poolModels" :key="m" :value="m">{{m}}</option></select></div><div class="w-24"><label class="text-[10px] text-gray-400">RPM</label><input v-model.number="rule.rpm" type="number" class="w-full px-2 py-1 rounded border text-sm text-center" placeholder="0"></div><div class="w-28"><label class="text-[10px] text-gray-400">TPM</label><input v-model.number="rule.tpm" type="number" class="w-full px-2 py-1 rounded border text-sm text-center" placeholder="0"></div><button @click="mrlEditor.rules.splice(idx,1)" class="text-red-400 hover:text-red-600 text-lg font-bold">&times;</button></div>
+      <button @click="mrlEditor.rules.push({model:'*',rpm:0,tpm:0})" class="w-full py-2 rounded-lg border-2 border-dashed border-gray-200 text-gray-400 hover:border-indigo-300 hover:text-indigo-500 text-sm transition">+ 添加模型策略</button>
+      <div class="text-xs text-gray-400 mt-2">提示：RPM/TPM 设 0 跟随全局，-1 不限制。“*”匹配未单独设置的模型。</div>
+    </div>
+    <div class="px-5 py-4 border-t flex gap-3 justify-end"><button @click="mrlEditor.show=false" class="px-4 py-2 rounded-lg border text-sm text-gray-500 hover:bg-gray-50">取消</button><button @click="saveMrlEditor()" class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">保存</button></div>
+  </div>
+</div>
+<div v-if="showDelConfirm" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" @click.self="showDelConfirm=false"><div class="bg-white rounded-2xl p-6 w-96 shadow-xl"><h3 class="font-bold text-gray-800 mb-2">⚠️ {{delConfirmTitle}}</h3><p class="text-sm text-[#8b949e] mb-4">{{delConfirmMsg}}</p><div class="flex justify-end gap-3"><button @click="showDelConfirm=false" class="px-4 py-2 rounded-lg text-sm border hover:bg-gray-50">{{t('cancel')}}</button><button @click="doDelConfirm" :class="['px-4 py-2 rounded-lg text-sm text-white',delConfirmDanger?'bg-red-600 hover:bg-red-700':'bg-indigo-600 hover:bg-indigo-700']">{{delConfirmBtn}}</button></div></div></div>
+</div></div></main></div>
+<div class="border-t border-gray-100 py-3 px-6 text-center text-xs text-gray-300">Zapi v{{appVersion}}</div></div><script src="/static/app.js"></script></body></html>

@@ -1,0 +1,54 @@
+
+  <div class="p-5 border-b border-gray-100">
+    <div class="flex items-center gap-2">
+<span class="text-xl">⚡</span>
+<span class="font-bold text-lg text-indigo-600">Zapi</span>
+</div>
+    <div class="text-xs text-gray-400 mt-1" v-if="currentUser">{{currentUser.username}} <span class="text-indigo-400">({{currentUser.role}})</span>
+</div>
+  </div>
+  <div class="flex-1 p-3 space-y-1">
+    <template v-if="isAdmin">
+      <button v-for="(icon,key) in {dashboard:'📊',channels:'🔌',groups:'🏷️',users:'👥',tokens:'🔑',logs:'📋',usage:'📈',myTokens:'🔑',myUsage:'📈',notifications:'🔔'}" :key="key" @click="tab=key;sidebarOpen=false" :class="['w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition',tab===key?'bg-indigo-50 text-indigo-700':'text-[#8b949e] hover:bg-gray-50']">
+<span>{{icon}}</span>
+<span>{{t(key)}}</span>
+<span v-if="key==='notifications' && unreadCount>0" class="ml-auto bg-red-500 text-white text-xs rounded-full px-1.5 min-w-[20px] text-center">{{unreadCount>99?'99+':unreadCount}}</span>
+</button>
+      <button v-if="isSuperAdmin" @click="tab='settings';sidebarOpen=false" :class="['w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition',tab==='settings'?'bg-indigo-50 text-indigo-700':'text-[#8b949e] hover:bg-gray-50']">
+<span>⚙️</span>
+<span>{{t('settings')}}</span>
+</button>
+      <button @click="tab='guide';sidebarOpen=false" :class="['w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition',tab==='guide'?'bg-indigo-50 text-indigo-700':'text-[#8b949e] hover:bg-gray-50']">
+<span>📖</span>
+<span>{{t('guide')}}</span>
+</button>
+    </template>
+    <template v-else-if="isOperator">
+      <button v-for="(icon,key) in {dashboard:'📊',logs:'📋',usage:'📈',myTokens:'🔑',myUsage:'📈',notifications:'🔔',guide:'📖'}" :key="key" @click="tab=key;sidebarOpen=false" :class="['w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition',tab===key?'bg-indigo-50 text-indigo-700':'text-[#8b949e] hover:bg-gray-50']">
+<span>{{icon}}</span>
+<span>{{t(key)}}</span>
+<span v-if="key==='notifications' && unreadCount>0" class="ml-auto bg-red-500 text-white text-xs rounded-full px-1.5 min-w-[20px] text-center">{{unreadCount>99?'99+':unreadCount}}</span>
+</button>
+    </template>
+    <template v-else>
+      <button v-for="(icon,key) in {dashboard:'📊',myTokens:'🔑',myUsage:'📈',notifications:'🔔',guide:'📖'}" :key="key" @click="tab=key;sidebarOpen=false" :class="['w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition',tab===key?'bg-indigo-50 text-indigo-700':'text-[#8b949e] hover:bg-gray-50']">
+<span>{{icon}}</span>
+<span>{{t(key)}}</span>
+<span v-if="key==='notifications' && unreadCount>0" class="ml-auto bg-red-500 text-white text-xs rounded-full px-1.5 min-w-[20px] text-center">{{unreadCount>99?'99+':unreadCount}}</span>
+</button>
+    </template>
+  </div>
+  <div class="p-3 border-t border-gray-100 space-y-1">
+    <button @click="showChangePwd=true" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition">
+<span>🔒</span>
+<span>{{t('changePwd')}}</span>
+</button>
+    <button @click="toggleLang" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition">
+<span>🌐</span>
+<span>{{lang==='zh'?'中文':'English'}}</span>
+</button>
+    <button @click="logout" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-400 hover:text-red-500 hover:bg-red-50 transition">
+<span>🚪</span>
+<span>{{t('logout')}}</span>
+</button>
+  </div>

@@ -1,0 +1,14 @@
+<div v-if="showChangePwd" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" @click.self="showChangePwd=false">
+  <div class="bg-white rounded-2xl p-6 w-96 shadow-xl">
+    <h3 class="font-bold text-gray-800 mb-4">{{t('changePwd')}}</h3>
+    <div class="space-y-3">
+      <input v-model="pwdForm.old_password" type="password" class="w-full px-3 py-2 rounded-lg border text-sm" :placeholder="t('oldPwd')">
+      <input v-model="pwdForm.new_password" type="password" class="w-full px-3 py-2 rounded-lg border text-sm" :placeholder="t('newPwd')">
+    </div>
+    <div v-if="pwdMsg" :class="['mt-2 text-xs',pwdOk?'text-green-600':'text-red-500']">{{pwdMsg}}</div>
+    <div class="mt-4 flex gap-2">
+      <button @click="showChangePwd=false" class="flex-1 py-2 rounded-lg border text-sm">{{t('cancel')}}</button>
+      <button @click="changePwd" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium">{{t('confirm')}}</button>
+    </div>
+  </div>
+</div>

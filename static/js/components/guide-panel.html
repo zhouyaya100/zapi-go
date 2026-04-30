@@ -1,0 +1,226 @@
+<div v-if="tab==='guide'" class="max-w-4xl">
+  <h2 class="text-xl font-bold text-gray-800 mb-6">📖 {{t('guide')}}</h2>
+  <div class="space-y-4">
+
+    <!-- 环境配置 -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-emerald-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-emerald-500 text-white text-xs font-bold flex items-center justify-center">1</span>
+        <span class="font-semibold text-emerald-700 text-sm">{{t('guide1Title')}}</span>
+      </div>
+      <div class="p-5">
+        <div class="bg-[#0d1117] rounded-lg p-4 text-sm font-mono text-[#c9d1d9] border border-gray-800 space-y-1">
+          <p>
+<span class="text-[#8b949e]"># 设置 API 地址</span>
+</p>
+          <p>
+<span class="text-[#79c0ff]">export</span> <span class="text-[#ffa657]">OPENAI_BASE_URL</span>=<span class="text-[#7ee787]">http://your-server:65000/v1</span>
+</p>
+          <p>
+<span class="text-[#8b949e]"># 设置 API Key</span>
+</p>
+          <p>
+<span class="text-[#79c0ff]">export</span> <span class="text-[#ffa657]">OPENAI_API_KEY</span>=<span class="text-[#7ee787]">sk-your-token-here</span>
+</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Python -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-blue-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center">2</span>
+        <span class="font-semibold text-blue-700 text-sm">Python (OpenAI SDK)</span>
+      </div>
+      <div class="p-5">
+        <div class="bg-[#0d1117] rounded-lg p-4 text-sm font-mono text-[#c9d1d9] border border-gray-800 space-y-1">
+          <p>
+<span class="text-[#79c0ff]">from</span> openai <span class="text-[#79c0ff]">import</span> OpenAI</p>
+          <p>
+</p>
+          <p>client = <span class="text-[#ffa657]">OpenAI</span>()</p>
+          <p>response = client.chat.completions.<span class="text-[#ffa657]">create</span>(</p>
+          <p>  model=<span class="text-[#7ee787]">"your-model"</span>,</p>
+          <p>  messages=[{<span class="text-[#7ee787]">"role"</span>: <span class="text-[#7ee787]">"user"</span>, <span class="text-[#7ee787]">"content"</span>: <span class="text-[#7ee787]">"Hello!"</span>}]</p>
+          <p>)</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- cURL -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-orange-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-orange-500 text-white text-xs font-bold flex items-center justify-center">3</span>
+        <span class="font-semibold text-orange-700 text-sm">cURL</span>
+      </div>
+      <div class="p-5">
+        <div class="bg-[#0d1117] rounded-lg p-4 text-sm font-mono text-[#c9d1d9] border border-gray-800 space-y-1 overflow-x-auto">
+          <p>curl http://your-server:65000/v1/chat/completions <span class="text-[#8b949e]">\</span>
+</p>
+          <p>  -H <span class="text-[#7ee787]">"Authorization: Bearer sk-your-token"</span> <span class="text-[#8b949e]">\</span>
+</p>
+          <p>  -H <span class="text-[#7ee787]">"Content-Type: application/json"</span> <span class="text-[#8b949e]">\</span>
+</p>
+          <p>  -d <span class="text-[#7ee787]">'{"model":"your-model","messages":[{"role":"user","content":"Hi"}]}'</span>
+</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- IDE 工具 -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-violet-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-violet-500 text-white text-xs font-bold flex items-center justify-center">4</span>
+        <span class="font-semibold text-violet-700 text-sm">Lobster / Cursor / Copilot</span>
+      </div>
+      <div class="p-5">
+        <div class="bg-[#0d1117] rounded-lg p-4 text-sm font-mono text-[#c9d1d9] border border-gray-800 space-y-1">
+          <p>
+<span class="text-[#ffa657]">API Base URL</span>: <span class="text-[#7ee787]">http://your-server:65000/v1</span>
+</p>
+          <p>
+<span class="text-[#ffa657]">API Key</span>: <span class="text-[#7ee787]">sk-your-token</span>
+</p>
+          <p>
+<span class="text-[#ffa657]">Model</span>: <span class="text-[#7ee787]">选择已授权的模型名称</span>
+</p>
+        </div>
+        <p class="text-xs text-gray-400 mt-2">在工具的设置中填入以上信息即可接入，兼容 OpenAI API 格式。</p>
+      </div>
+    </div>
+
+    <!-- NextChat -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-cyan-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-cyan-500 text-white text-xs font-bold flex items-center justify-center">5</span>
+        <span class="font-semibold text-cyan-700 text-sm">NextChat / ChatGPT-Next-Web</span>
+      </div>
+      <div class="p-5">
+        <div class="bg-[#0d1117] rounded-lg p-4 text-sm font-mono text-[#c9d1d9] border border-gray-800 space-y-1">
+          <p>
+<span class="text-[#8b949e]"># 设置 → 自定义接口</span>
+</p>
+          <p>
+<span class="text-[#ffa657]">接口地址</span>: <span class="text-[#7ee787]">http://your-server:65000</span>
+</p>
+          <p>
+<span class="text-[#ffa657]">API Key</span>: <span class="text-[#7ee787]">sk-your-token</span>
+</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- LobeChat -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-rose-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-rose-500 text-white text-xs font-bold flex items-center justify-center">6</span>
+        <span class="font-semibold text-rose-700 text-sm">LobeChat</span>
+      </div>
+      <div class="p-5">
+        <div class="bg-[#0d1117] rounded-lg p-4 text-sm font-mono text-[#c9d1d9] border border-gray-800 space-y-1">
+          <p>
+<span class="text-[#8b949e]"># 语言模型 → OpenAI</span>
+</p>
+          <p>
+<span class="text-[#ffa657]">Endpoint</span>: <span class="text-[#7ee787]">http://your-server:65000/v1</span>
+</p>
+          <p>
+<span class="text-[#ffa657]">API Key</span>: <span class="text-[#7ee787]">sk-your-token</span>
+</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 流式调用 -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-indigo-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-indigo-500 text-white text-xs font-bold flex items-center justify-center">7</span>
+        <span class="font-semibold text-indigo-700 text-sm">Stream 流式调用</span>
+      </div>
+      <div class="p-5">
+        <div class="bg-[#0d1117] rounded-lg p-4 text-sm font-mono text-[#c9d1d9] border border-gray-800 space-y-1">
+          <p>client.chat.completions.<span class="text-[#ffa657]">create</span>(</p>
+          <p>  model=<span class="text-[#7ee787]">"your-model"</span>,</p>
+          <p>  messages=[...],</p>
+          <p>  <span class="text-[#ffa657]">stream</span>=<span class="text-[#79c0ff]">True</span>  <span class="text-[#8b949e]"># 启用流式</span>
+</p>
+          <p>)</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 更多端点 -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-amber-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center">8</span>
+        <span class="font-semibold text-amber-700 text-sm">更多 API 端点</span>
+      </div>
+      <div class="p-5">
+        <div class="text-sm text-gray-600 space-y-2">
+          <p class="font-medium text-gray-700">除 Chat 对话外，还支持以下 OpenAI 兼容端点：</p>
+          <div class="bg-gray-50 rounded-lg p-3 space-y-1.5 text-xs font-mono">
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/embeddings <span class="text-gray-400">— 文本向量化</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/images/generations <span class="text-gray-400">— 图片生成</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/images/edits <span class="text-gray-400">— 图片编辑</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/images/variations <span class="text-gray-400">— 图片变体</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/audio/speech <span class="text-gray-400">— TTS 语音合成</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/audio/transcriptions <span class="text-gray-400">— 语音转写</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/audio/translations <span class="text-gray-400">— 语音翻译</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/videos/generations <span class="text-gray-400">— 视频生成</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold">POST</span> /v1/moderations <span class="text-gray-400">— 内容审核</span>
+</p>
+            <p>
+<span class="text-amber-600 font-bold"> GET</span> /v1/models <span class="text-gray-400">— 模型列表</span>
+</p>
+          </div>
+          <p class="text-xs text-gray-400 mt-2">所有端点均支持计费（按 token / 按张 / 按音频大小），需上游 API 支持对应能力。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 计费说明 -->
+    <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-gradient-to-r from-teal-50 to-white flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-teal-500 text-white text-xs font-bold flex items-center justify-center">9</span>
+        <span class="font-semibold text-teal-700 text-sm">计费说明</span>
+      </div>
+      <div class="p-5">
+        <div class="text-sm text-gray-600 space-y-2">
+          <div class="bg-gray-50 rounded-lg p-3 space-y-1.5 text-xs">
+            <p>
+<span class="font-bold text-gray-700">Chat/Completions：</span>本地 tiktoken 计算 prompt + 上游 usage 计算 completion（含思考模型的 reasoning_tokens）</p>
+            <p>
+<span class="font-bold text-gray-700">Embeddings：</span>优先上游 usage，fallback tiktoken 估算</p>
+            <p>
+<span class="font-bold text-gray-700">Images：</span>按张数估算（每张约 1000 tokens）</p>
+            <p>
+<span class="font-bold text-gray-700">Audio TTS：</span>按音频大小估算</p>
+            <p>
+<span class="font-bold text-gray-700">Audio 转写：</span>优先上游 usage，fallback tiktoken</p>
+            <p>
+<span class="font-bold text-gray-700">Video：</span>优先上游 usage，fallback 估算</p>
+          </div>
+          <p class="text-xs text-gray-400">额度批量扣费（5秒间隔），关闭服务时自动结算剩余。</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>

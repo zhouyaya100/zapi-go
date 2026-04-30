@@ -1,0 +1,118 @@
+<div v-if="tab==='dashboard' && !isAdmin">
+  <h2 class="text-xl font-bold text-gray-800 mb-6">📊 {{t('dashboard')}}</h2>
+  <div v-if="!userDash.group_name" class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-sm text-amber-700 flex items-center gap-2">⚠️ {{t('noGroupWarn')}}</div>
+  <!-- Stats Cards -->
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-5">
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('tokenCountQuota')}}</div>
+<div class="text-2xl font-bold text-indigo-600">{{userDash.token_count||0}}<span class="text-base text-gray-300 font-normal"> / {{userDash.max_tokens===999?'∞':userDash.max_tokens}}</span></div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('tokenUsageQuota')}}</div>
+<div class="text-2xl font-bold" :class="userDash.token_quota===-1||userDash.token_quota==='-1'?'':'text-gray-800'">
+<span v-if="userDash.token_quota===-1||userDash.token_quota==='-1'" class="text-xs bg-purple-50 text-purple-500 px-2.5 py-1 rounded-lg ring-1 ring-purple-200 font-medium">∞ 不限量</span>
+<span v-else>{{formatNum(userDash.token_quota)}}</span>
+</div>
+<div v-if="userDash.token_quota!==-1&&userDash.token_quota!=='-1'" class="mt-2">
+<div class="flex items-center justify-between text-xs text-gray-400 mb-1">
+<span>已用 {{formatNum(userDash.token_quota_used)}}</span>
+<span>{{t('quotaRemaining')}} {{formatNum(bigSub(userDash.token_quota,userDash.token_quota_used))}}</span>
+</div>
+<div class="w-full bg-gray-100 rounded-full h-2">
+<div class="bg-gradient-to-r from-purple-400 to-pink-500 rounded-full h-2 transition-all" :style="{width:Math.min(100,Number(userDash.token_quota_used)/Number(userDash.token_quota)*100)+'%'}"></div>
+</div>
+</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('group')}}</div>
+<div class="text-2xl font-bold text-blue-600">{{userDash.group_name||'--'}}</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('inputTokens')}}</div>
+<div class="text-2xl font-bold text-emerald-600">{{formatNum(userDash.total_prompt_tokens||0)}}</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('outputTokens')}}</div>
+<div class="text-2xl font-bold text-amber-600">{{formatNum(userDash.total_completion_tokens||0)}}</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">RPM / TPM</div>
+<div class="flex items-baseline gap-1"><span class="text-xl font-bold text-cyan-600">{{userDash.rpm===-1?'∞':(userDash.rpm===0?'无额度':userDash.rpm)}}</span><span class="text-xs text-gray-300">/</span><span class="text-xl font-bold text-violet-600">{{userDash.tpm===-1?'∞':(userDash.tpm===0?'无额度':formatNum(userDash.tpm))}}</span></div>
+<div class="text-xs text-gray-300 mt-1">{{userDash.rate_mode==='inherit'?'继承分组':(userDash.rpm===-1?'不限制':(userDash.rpm===0?'已禁用':'每分钟'))}}</div>
+</div>
+  </div>
+  <!-- Model Rate Limits -->
+  <div v-if="userDash.model_limits && Object.keys(userDash.model_limits).length" class="bg-white rounded-xl border shadow-sm p-5 mb-5">
+    <div class="text-xs font-medium text-gray-400 mb-3">模型访问策略 <span v-if="userDash.rate_mode==='inherit'" class="text-indigo-400">· 继承自「{{userDash.group_name}}」分组</span></div>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+      <div v-for="(lim,m) in userDash.model_limits" :key="m" class="rounded-lg border px-3 py-2.5" :class="m==='*'?'bg-gray-50 border-gray-200':'bg-indigo-50 border-indigo-100'">
+        <div class="font-medium text-sm" :class="m==='*'?'text-gray-600':'text-indigo-700'">{{m==='*'?'* 其他模型':m}}</div>
+        <div class="flex items-center gap-3 mt-1.5 text-xs">
+          <span class="text-cyan-600"><span class="font-medium">{{lim.rpm===-1?'∞':lim.rpm}}</span> RPM</span>
+          <span class="text-gray-300">|</span>
+          <span class="text-violet-600"><span class="font-medium">{{lim.tpm===-1?'∞':formatNum(lim.tpm)}}</span> TPM</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Recent + 24h -->
+  <div class="grid grid-cols-3 gap-4 mb-5">
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">{{t('requests')}}</div>
+<div class="text-2xl font-bold text-rose-600">{{userDash.total_requests||0}}</div>
+<div class="text-xs text-gray-400 mt-1">{{t('successRate')}} {{userDash.total_requests?Math.round((userDash.success_requests||0)/userDash.total_requests*100):0}}%</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">24h {{t('requests')}}</div>
+<div class="text-2xl font-bold text-sky-600">{{userDash.recent_24h_requests||0}}</div>
+</div>
+    <div class="bg-white rounded-xl border shadow-sm p-5">
+<div class="text-xs font-medium text-gray-400 mb-2">24h Token</div>
+<div class="text-2xl font-bold text-cyan-600">{{formatNum(userDash.recent_24h_tokens||0)}}</div>
+</div>
+  </div>
+  <!-- Authed Models -->
+  <div v-if="userDash.authorized_models?.length" class="bg-white rounded-xl border shadow-sm p-5 mb-5">
+    <h3 class="text-sm font-semibold text-gray-600 mb-3">🤖 {{t('authedModels')}}</h3>
+    <div class="flex flex-wrap gap-2">
+<span v-for="m in userDash.authorized_models" :key="m" class="text-xs bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-lg font-mono ring-1 ring-indigo-200">{{m}}</span>
+</div>
+  </div>
+  <!-- Model Usage -->
+  <!-- Usage Trend Chart -->
+  <div class="bg-white rounded-xl border shadow-sm p-5 mb-5">
+    <h3 class="text-sm font-semibold text-gray-600 mb-3">📈 30天用量趋势</h3>
+    <div style="height:280px">
+<canvas id="myDashChartCanvas">
+</canvas>
+</div>
+  </div>
+  <!-- Model Usage -->
+  <div v-if="userDash.model_stats?.length" class="bg-white rounded-xl border shadow-sm p-5 mb-5">
+    <h3 class="text-sm font-semibold text-gray-600 mb-3">{{t('modelUsage')}}</h3>
+    <div class="space-y-3">
+      <div v-for="m in userDash.model_stats" :key="m.model" class="flex items-center gap-3">
+        <span class="text-xs font-mono text-gray-700 w-40 truncate font-medium">{{m.model}}</span>
+        <div class="flex-1 bg-gray-100 rounded-full h-2.5">
+<div class="bg-gradient-to-r from-purple-400 to-indigo-500 rounded-full h-2.5 transition-all" :style="{width:barWidth(m.count,userDash.model_stats)+'%'}">
+</div>
+</div>
+        <span class="text-xs text-gray-500 w-24 text-right font-medium">{{m.count}}次 · {{m.avg_latency}}ms</span>
+      </div>
+    </div>
+  </div>
+  <!-- Recent Logs -->
+  <div v-if="userDash.recent_logs?.length" class="bg-white rounded-xl border shadow-sm p-5">
+    <h3 class="text-sm font-semibold text-gray-600 mb-3">{{t('recentLogs')}}</h3>
+    <div class="space-y-1.5">
+      <div v-for="l in userDash.recent_logs.slice(0,10)" :key="l.created_at" class="flex items-center gap-3 text-xs py-1 border-b border-gray-50 last:border-0">
+        <span class="text-gray-400 w-36">{{fmtTime(l.created_at)}}</span>
+        <span class="font-mono text-indigo-600 w-28 truncate">{{l.model}}</span>
+        <span class="text-emerald-500 font-medium">↑{{l.prompt_tokens}}</span>
+        <span class="text-amber-500 font-medium">↓{{l.completion_tokens}}</span>
+        <span class="text-gray-400">{{l.latency_ms}}ms</span>
+        <span :class="l.success?'text-green-500':'text-red-500'" class="font-bold">{{l.success?'✓':'✗'}}</span>
+      </div>
+    </div>
+  </div>
+</div>
