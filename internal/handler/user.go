@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -8,6 +9,7 @@ import (
 	"github.com/zapi/zapi-go/internal/core/routing"
 	"github.com/zapi/zapi-go/internal/middleware"
 	"github.com/zapi/zapi-go/internal/model"
+	"gorm.io/gorm"
 )
 
 // parsePagination extracts limit and offset from query params.
@@ -58,6 +60,19 @@ func HandleListUsers(c *gin.Context) {
 	for _, g := range groups {
 		groupMap[g.ID] = g
 	}
+	var upstreamGroups []model.UpstreamGroup
+	model.DB.Find(&upstreamGroups)
+	ugMap := make(map[uint]model.UpstreamGroup)
+	for _, ug := range upstreamGroups {
+		ugMap[ug.ID] = ug
+	}
+	// Query all user-upstream-group associations
+	var userUGs []model.UserUpstreamGroup
+	model.DB.Find(&userUGs)
+	userUGMap := make(map[uint][]uint) // user_id -> []upstream_group_id
+	for _, uug := range userUGs {
+		userUGMap[uug.UserID] = append(userUGMap[uug.UserID], uug.UpstreamGroupID)
+	}
 	result := make([]gin.H, len(users))
 	for i, u := range users {
 		gn := ""
@@ -68,9 +83,17 @@ func HandleListUsers(c *gin.Context) {
 				authedModels = core.GetGroupAuthedModels(gn, u.AllowedModels, routing.Pool)
 			}
 		}
+		ugIDs := userUGMap[u.ID]
+		ugNames := make([]string, 0, len(ugIDs))
+		for _, uid := range ugIDs {
+			if ug, ok := ugMap[uid]; ok {
+				ugNames = append(ugNames, ug.Name)
+			}
+		}
 		result[i] = gin.H{
 			"id": u.ID, "username": u.Username, "role": u.Role,
 			"group_id": u.GroupID, "group_name": gn, "enabled": u.Enabled,
+			"upstream_group_ids": ugIDs, "upstream_group_names": ugNames,
 			"max_tokens": u.MaxTokens,
 			"token_quota":      core.SafeInt(u.TokenQuota),
 			"token_quota_used": core.SafeInt(u.TokenQuotaUsed),
@@ -88,7 +111,11 @@ func HandleListUsers(c *gin.Context) {
 }
 
 func HandleUpdateUser(c *gin.Context) {
-	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(400, gin.H{"error": gin.H{"message": "无效的用户ID"}})
+		return
+	}
 	a := middleware.GetAuth(c)
 	if a != nil && uint(id) == model.SuperAdminID && !a.IsSuper {
 		c.JSON(403, gin.H{"error": gin.H{"message": "\u65e0\u6cd5\u4fee\u6539\u8d85\u7ea7\u7ba1\u7406\u5458"}})
@@ -131,7 +158,42 @@ func HandleUpdateUser(c *gin.Context) {
 	if user.RateMode != "inherit" {
 		if v, ok := req["rpm"].(float64); ok { user.RPM = int(v) }
 		if v, ok := req["tpm"].(float64); ok { user.TPM = int64(v) }
-		if v, ok := req["model_rate_limits"].(string); ok { user.ModelRateLimits = v }
+		if v, ok := req["model_rate_limits"].(string); ok {
+			user.ModelRateLimits = v
+		} else if arr, ok := req["model_rate_limits"].([]interface{}); ok {
+			// Convert array format [{model,rpm,tpm,blocked}] to map {model: {rpm,tpm,blocked}} then to JSON string
+			mrlMap := make(map[string]interface{})
+			for _, item := range arr {
+				if m, ok := item.(map[string]interface{}); ok {
+					modelName, _ := m["model"].(string)
+					if modelName == "" {
+						continue
+					}
+					entry := map[string]interface{}{}
+					if rpm, ok := m["rpm"].(float64); ok {
+						entry["rpm"] = int(rpm)
+					} else {
+						entry["rpm"] = 0
+					}
+					if tpm, ok := m["tpm"].(float64); ok {
+						entry["tpm"] = int64(tpm)
+					} else {
+						entry["tpm"] = 0
+					}
+					if blocked, ok := m["blocked"].(bool); ok {
+						entry["blocked"] = blocked
+					}
+					mrlMap[modelName] = entry
+				}
+			}
+			if len(mrlMap) > 0 {
+				if b, err := json.Marshal(mrlMap); err == nil {
+					user.ModelRateLimits = string(b)
+				}
+			} else {
+				user.ModelRateLimits = ""
+			}
+		}
 	}
 	if v, ok := req["group_id"].(float64); ok {
 		if v > 0 {
@@ -139,6 +201,22 @@ func HandleUpdateUser(c *gin.Context) {
 			user.GroupID = &uid
 		} else {
 			user.GroupID = nil
+		}
+	}
+	// Update user upstream groups (many-to-many)
+	if ugIDs, ok := req["upstream_group_ids"]; ok {
+		var ids []uint
+		if arr, ok := ugIDs.([]interface{}); ok {
+			for _, item := range arr {
+				if f, ok := item.(float64); ok && f > 0 {
+					ids = append(ids, uint(f))
+				}
+			}
+		}
+		// Delete old associations, insert new
+		model.DB.Where("user_id = ?", user.ID).Delete(&model.UserUpstreamGroup{})
+		for _, gid := range ids {
+			model.DB.Create(&model.UserUpstreamGroup{UserID: user.ID, UpstreamGroupID: gid})
 		}
 	}
 	if v, ok := req["role"].(string); ok {
@@ -170,11 +248,17 @@ func HandleUpdateUser(c *gin.Context) {
 	}
 	model.DB.Save(&user)
 	core.InvalidateUserCache(user.ID)
+	core.InvalidateGroupCache(0) // invalidate all group caches since group membership may affect model permissions
+	core.InvalidateAllTokenCache()
 	c.JSON(200, gin.H{"success": true})
 }
 
 func HandleDeleteUser(c *gin.Context) {
-	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(400, gin.H{"error": gin.H{"message": "无效的用户ID"}})
+		return
+	}
 	if uint(id) == model.SuperAdminID {
 		c.JSON(403, gin.H{"error": gin.H{"message": "\u65e0\u6cd5\u5220\u9664\u8d85\u7ea7\u7ba1\u7406\u5458"}})
 		return
@@ -184,7 +268,7 @@ func HandleDeleteUser(c *gin.Context) {
 		c.JSON(404, gin.H{"error": gin.H{"message": "\u7528\u6237\u4e0d\u5b58\u5728"}})
 		return
 	}
-	if user.Role == "admin" && middleware.GetAuth(c) != nil && !middleware.GetAuth(c).IsSuper {
+	auth4 := middleware.GetAuth(c); if user.Role == "admin" && auth4 != nil && !auth4.IsSuper {
 		c.JSON(403, gin.H{"error": gin.H{"message": "\u65e0\u6cd5\u5220\u9664\u7ba1\u7406\u5458\u7528\u6237"}})
 		return
 	}
@@ -195,7 +279,11 @@ func HandleDeleteUser(c *gin.Context) {
 }
 
 func HandleRechargeUser(c *gin.Context) {
-	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(400, gin.H{"error": gin.H{"message": "无效的用户ID"}})
+		return
+	}
 	var u model.User
 	if model.DB.First(&u, id).Error != nil {
 		c.JSON(404, gin.H{"error": gin.H{"message": "\u7528\u6237\u4e0d\u5b58\u5728"}})
@@ -208,17 +296,23 @@ func HandleRechargeUser(c *gin.Context) {
 		return
 	}
 	if u.TokenQuota == -1 {
-		c.JSON(400, gin.H{"error": gin.H{"message": "\u7528\u6237\u989d\u5ea6\u4e3a\u65e0\u9650\uff0c\u65e0\u9700\u5145\u503c"}})
+		c.JSON(400, gin.H{"error": gin.H{"message": "\u7528\u6237\u989d\u5ea6\u4e3a\u65e0\u9650\uff0c\u65e0\u987b\u5145\u503c"}})
 		return
 	}
-	u.TokenQuota += req.Amount
-	model.DB.Save(&u)
+	// Atomic update to avoid race condition on concurrent recharge
+	model.DB.Model(&model.User{}).Where("id = ?", u.ID).UpdateColumn("token_quota", gorm.Expr("token_quota + ?", req.Amount))
 	core.InvalidateUserCache(u.ID)
+	// Re-read user data to return accurate values
+	model.DB.First(&u, id)
 	c.JSON(200, gin.H{"success": true, "token_quota": core.SafeInt(u.TokenQuota), "token_quota_used": core.SafeInt(u.TokenQuotaUsed)})
 }
 
 func HandleDeductUser(c *gin.Context) {
-	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(400, gin.H{"error": gin.H{"message": "无效的用户ID"}})
+		return
+	}
 	var u model.User
 	if model.DB.First(&u, id).Error != nil {
 		c.JSON(404, gin.H{"error": gin.H{"message": "\u7528\u6237\u4e0d\u5b58\u5728"}})
@@ -238,8 +332,16 @@ func HandleDeductUser(c *gin.Context) {
 		c.JSON(400, gin.H{"error": gin.H{"message": "\u6263\u9664\u540e\u989d\u5ea6\u4e0d\u80fd\u4f4e\u4e8e\u5df2\u7528\u91cf"}})
 		return
 	}
-	u.TokenQuota -= req.Amount
-	model.DB.Save(&u)
+	// Atomic update with WHERE guard to prevent over-deduction under concurrency
+	result := model.DB.Model(&model.User{}).
+		Where("id = ? AND token_quota - ? >= token_quota_used", u.ID, req.Amount).
+		UpdateColumn("token_quota", gorm.Expr("token_quota - ?", req.Amount))
+	if result.RowsAffected == 0 {
+		c.JSON(400, gin.H{"error": gin.H{"message": "\u6263\u9664\u540e\u989d\u5ea6\u4e0d\u80fd\u4f4e\u4e8e\u5df2\u7528\u91cf"}})
+		return
+	}
 	core.InvalidateUserCache(u.ID)
+	// Re-read user data to return accurate values
+	model.DB.First(&u, id)
 	c.JSON(200, gin.H{"success": true, "token_quota": core.SafeInt(u.TokenQuota), "token_quota_used": core.SafeInt(u.TokenQuotaUsed)})
 }

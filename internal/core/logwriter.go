@@ -13,6 +13,11 @@ var logCh = make(chan model.Log, 65536)
 // StopChan signals all background goroutines to exit
 var StopChan = make(chan os.Signal, 1)
 
+// processLogEntry writes a single log entry directly to the database (fallback when channel is full)
+func processLogEntry(l model.Log) {
+	model.DB.Create(&l)
+}
+
 func StartLogWriter() {
 	go func() {
 		batch := make([]model.Log, 0, config.Cfg.Log.BatchSize)
@@ -33,7 +38,14 @@ func StartLogWriter() {
 	}()
 }
 
-func AddLog(l model.Log) { logCh <- l }
+func AddLog(l model.Log) {
+	select {
+	case logCh <- l:
+	default:
+		// Buffer full — fall back to synchronous write
+		processLogEntry(l)
+	}
+}
 
 func StartLogCleanup() {
 	go func() {

@@ -70,10 +70,16 @@ func HandleRegister(c *gin.Context) {
 		MaxTokens:   config.Cfg.Registration.DefaultMaxTokens,
 		TokenQuota:  config.Cfg.Registration.DefaultTokenQuota,
 	}
-	hash, _ := core.HashPassword(req.Password)
+	hash, err := core.HashPassword(req.Password)
+	if err != nil { c.JSON(500, gin.H{"error": gin.H{"message": "密码处理失败"}}); return }
 	user.PasswordHash = hash
-	model.DB.Create(&user)
-	jwtStr, _ := core.CreateJWT(user.ID)
+	if err := model.DB.Create(&user).Error; err != nil {
+		c.JSON(500, gin.H{"error": gin.H{"message": "注册失败，请稍后重试"}})
+		return
+	}
+	core.InvalidateUserCache(user.ID)
+	jwtStr, err := core.CreateJWT(user.ID)
+	if err != nil { c.JSON(500, gin.H{"error": gin.H{"message": "JWT创建失败"}}); return }
 	c.JSON(200, gin.H{
 		"success": true,
 		"user":    gin.H{"id": user.ID, "username": user.Username, "role": user.Role},
@@ -123,7 +129,8 @@ func HandleLogin(c *gin.Context) {
 		c.JSON(403, gin.H{"error": gin.H{"message": "\u8d26\u53f7\u5df2\u88ab\u7981\u7528"}})
 		return
 	}
-	jwtStr, _ := core.CreateJWT(user.ID)
+	jwtStr, err := core.CreateJWT(user.ID)
+	if err != nil { c.JSON(500, gin.H{"error": gin.H{"message": "JWT创建失败"}}); return }
 	c.JSON(200, gin.H{
 		"success": true,
 		"user": gin.H{
@@ -219,8 +226,41 @@ func HandleChangePassword(c *gin.Context) {
 		c.JSON(400, gin.H{"error": gin.H{"message": "\u65b0\u5bc6\u7801\u4e0d\u80fd\u4e0e\u539f\u5bc6\u7801\u76f8\u540c"}})
 		return
 	}
-	hash, _ := core.HashPassword(req.NewPassword)
+	hash, err := core.HashPassword(req.NewPassword)
+	if err != nil { c.JSON(500, gin.H{"error": gin.H{"message": "密码处理失败"}}); return }
 	model.DB.Model(u).Update("password_hash", hash)
 	core.InvalidateUserCache(u.ID)
 	c.JSON(200, gin.H{"success": true})
+}
+
+// HandleRefreshToken — refresh a JWT token (returns a new token with extended expiry)
+func HandleRefreshToken(c *gin.Context) {
+	a := middleware.GetAuth(c)
+	if a == nil {
+		c.JSON(401, gin.H{"error": gin.H{"message": "未认证"}})
+		return
+	}
+	// Verify user still exists and is enabled
+	var user model.User
+	if model.DB.First(&user, a.UserID).Error != nil {
+		c.JSON(401, gin.H{"error": gin.H{"message": "用户不存在"}})
+		return
+	}
+	if !user.Enabled {
+		c.JSON(403, gin.H{"error": gin.H{"message": "账号已被禁用"}})
+		return
+	}
+	jwtStr, err := core.CreateJWT(user.ID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": gin.H{"message": "JWT创建失败"}})
+		return
+	}
+	c.JSON(200, gin.H{
+		"token": jwtStr,
+		"user": gin.H{
+			"id":       user.ID,
+			"username": user.Username,
+			"role":     user.Role,
+		},
+	})
 }

@@ -8,32 +8,48 @@ import (
 const SuperAdminID = 1
 
 type Channel struct {
-	ID            uint       `gorm:"primaryKey" json:"id"`
-	Name          string     `json:"name"`
-	Type          string     `json:"type"`
-	BaseURL       string     `gorm:"column:base_url" json:"base_url"`
-	APIKey        string     `gorm:"column:api_key" json:"api_key"`
-	Models        string     `json:"models"`
-	ModelMapping  string     `gorm:"column:model_mapping" json:"model_mapping"`
-	AllowedGroups string     `gorm:"column:allowed_groups" json:"allowed_groups"`
-	Weight        int        `json:"weight"`
-	Priority      int        `json:"priority"`
-	Enabled       bool       `json:"enabled"`
-	AutoBan       bool       `gorm:"column:auto_ban" json:"auto_ban"`
-	FailCount     int        `gorm:"column:fail_count" json:"fail_count"`
-	TestTime      *time.Time `gorm:"column:test_time" json:"test_time"`
-	ResponseTime  int        `gorm:"column:response_time" json:"response_time"`
-	CreatedAt     time.Time  `json:"created_at"`
+	ID              uint       `gorm:"primaryKey" json:"id"`
+	Name            string     `json:"name"`
+	Type            string     `json:"type"`
+	BaseURL         string     `gorm:"column:base_url" json:"base_url"`
+	APIKey          string     `gorm:"column:api_key" json:"api_key"`
+	Models          string     `json:"models"`
+	ModelMapping    string     `gorm:"column:model_mapping" json:"model_mapping"`
+	AllowedGroups   string     `gorm:"column:allowed_groups" json:"allowed_groups"`
+	Weight          int        `json:"weight"`
+	Priority        int        `json:"priority"`
+	Enabled         bool       `json:"enabled"`
+	AutoBan         bool       `gorm:"column:auto_ban" json:"auto_ban"`
+	FailCount       int        `gorm:"column:fail_count" json:"fail_count"`
+	TestTime        *time.Time `gorm:"column:test_time" json:"test_time"`
+	ResponseTime    int        `gorm:"column:response_time" json:"response_time"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 func (Channel) TableName() string { return "channels" }
+
+// UpstreamGroupChannel — many-to-many join table: channel can belong to multiple upstream groups
+type UpstreamGroupChannel struct {
+	UpstreamGroupID uint `gorm:"primaryKey;column:upstream_group_id" json:"upstream_group_id"`
+	ChannelID       uint `gorm:"primaryKey;column:channel_id" json:"channel_id"`
+}
+
+func (UpstreamGroupChannel) TableName() string { return "upstream_group_channels" }
+
+// UserUpstreamGroup — many-to-many: user can belong to multiple upstream groups
+type UserUpstreamGroup struct {
+	UserID         uint `gorm:"primaryKey;column:user_id" json:"user_id"`
+	UpstreamGroupID uint `gorm:"primaryKey;column:upstream_group_id" json:"upstream_group_id"`
+}
+
+func (UserUpstreamGroup) TableName() string { return "user_upstream_groups" }
 
 type User struct {
 	ID             uint      `gorm:"primaryKey" json:"id"`
 	Username       string    `gorm:"uniqueIndex" json:"username"`
 	PasswordHash   string    `gorm:"column:password_hash" json:"-"`
 	Role           string    `gorm:"default:user" json:"role"`
-	GroupID        *uint     `gorm:"column:group_id" json:"group_id"`
+	GroupID           *uint     `gorm:"column:group_id" json:"group_id"`
 	Enabled        bool      `gorm:"default:true" json:"enabled"`
 	MaxTokens      int       `gorm:"column:max_tokens;default:3" json:"max_tokens"`
 	TokenQuota     int64     `gorm:"column:token_quota;default:-1" json:"token_quota"`
@@ -83,6 +99,7 @@ type Log struct {
 		TokenName        string    `gorm:"column:token_name" json:"token_name"`
 	ChannelID        uint      `gorm:"column:channel_id;index" json:"channel_id"`
 	ChannelName      string    `gorm:"column:channel_name" json:"channel_name"`
+	UpstreamGroupID  uint      `gorm:"column:upstream_group_id;default:0;index" json:"upstream_group_id"`
 	Model            string    `gorm:"index" json:"model"`
 	IsStream         bool      `gorm:"column:is_stream" json:"is_stream"`
 	PromptTokens     int64     `gorm:"column:prompt_tokens" json:"prompt_tokens"`
@@ -108,6 +125,23 @@ type Notification struct {
 }
 
 func (Notification) TableName() string { return "notifications" }
+
+// UpstreamGroup — load-balanced channel group
+type UpstreamGroup struct {
+	ID                   uint      `gorm:"primaryKey" json:"id"`
+	Name                 string    `gorm:"uniqueIndex" json:"name"`
+	Alias                string    `json:"alias"`                                              // exposed model name
+	Strategy             string    `gorm:"default:'priority'" json:"strategy"`                 // priority|round_robin|weighted|least_latency|least_requests
+	AllowedGroups        string    `gorm:"column:allowed_groups" json:"allowed_groups"`        // comma-separated group names
+	Enabled              bool      `gorm:"default:true" json:"enabled"`
+	HealthCheckInterval  int       `gorm:"column:health_check_interval;default:0" json:"health_check_interval"` // 0=follow global heartbeat
+	MaxFails             int       `gorm:"column:max_fails;default:5" json:"max_fails"`
+	FailTimeout          int       `gorm:"column:fail_timeout;default:30" json:"fail_timeout"`  // seconds
+	RetryOnFail          bool      `gorm:"column:retry_on_fail;default:true" json:"retry_on_fail"`
+	CreatedAt            time.Time `json:"created_at"`
+}
+
+func (UpstreamGroup) TableName() string { return "upstream_groups" }
 
 // DB global instance
 var DB *gorm.DB

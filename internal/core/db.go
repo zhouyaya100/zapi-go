@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -26,12 +27,18 @@ func InitDB() error {
 	} else {
 		model.DB, err = gorm.Open(postgres.Open(config.Cfg.Database.URL), cfg)
 		if err != nil { return err }
-		sqlDB, _ := model.DB.DB()
+		sqlDB, err := model.DB.DB()
+		if err != nil { return fmt.Errorf("failed to get underlying sql.DB: %w", err) }
 		sqlDB.SetMaxOpenConns(config.Cfg.Database.PoolSize + config.Cfg.Database.MaxOverflow)
 		sqlDB.SetMaxIdleConns(config.Cfg.Database.PoolSize)
 		sqlDB.SetConnMaxLifetime(time.Duration(config.Cfg.Database.PoolRecycle) * time.Second)
 	}
-	model.DB.AutoMigrate(&model.Channel{}, &model.User{}, &model.Token{}, &model.Group{}, &model.Log{}, &model.Notification{})
+	model.DB.AutoMigrate(&model.Channel{}, &model.User{}, &model.Token{}, &model.Group{}, &model.Log{}, &model.Notification{}, &model.UpstreamGroup{})
+	// Verify critical tables exist
+	if !model.DB.Migrator().HasTable(&model.UpstreamGroup{}) {
+		log.Println("[DB] WARNING: upstream_groups table not created by AutoMigrate, creating manually...")
+		model.DB.Migrator().CreateTable(&model.UpstreamGroup{})
+	}
 	// Run schema migrations (handles new columns, indexes, etc.)
 	migrate.RunMigrations(model.DB)
 	log.Println("[DB] Connected")

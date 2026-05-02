@@ -1,22 +1,41 @@
 package middleware
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"encoding/json"
 	"github.com/gin-gonic/gin"
+	"github.com/zapi/zapi-go/internal/config"
 	"github.com/zapi/zapi-go/internal/core"
 	"github.com/zapi/zapi-go/internal/model"
 )
 
 func CORS() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
+		origin := c.GetHeader("Origin")
+		if origin != "" {
+			// Check against allowed origins from config
+			allowed := config.Cfg.Security.CORSOrigins
+			if allowed == "" || allowed == "*" {
+				// No restrictions configured — allow any origin
+				c.Header("Access-Control-Allow-Origin", origin)
+			} else {
+				// Check if origin is in the allowed list (comma-separated)
+				for _, o := range strings.Split(allowed, ",") {
+					if strings.TrimSpace(o) == origin {
+						c.Header("Access-Control-Allow-Origin", origin)
+						break
+					}
+				}
+			}
+		}
 		c.Header("Access-Control-Allow-Credentials", "true")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
 		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, User-Agent")
+		c.Header("Access-Control-Expose-Headers", "X-Captcha-Id, Content-Disposition")
+		c.Header("Access-Control-Max-Age", "86400")
 		if c.Request.Method == "OPTIONS" { c.AbortWithStatus(204); return }
 		c.Next()
 	}
@@ -25,6 +44,7 @@ func CORS() gin.HandlerFunc {
 func BodyLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.Request.ContentLength > 10<<20 { c.JSON(413, gin.H{"error": gin.H{"message": "\u8bf7\u6c42\u4f53\u8fc7\u5927"}}); c.Abort(); return }
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 10<<20)
 		c.Next()
 	}
 }
@@ -48,9 +68,10 @@ func RequireAuth() gin.HandlerFunc {
 		// JWT
 		uid, err := core.ParseJWT(token)
 		if err != nil { c.JSON(401, gin.H{"error": gin.H{"message": "\u8ba4\u8bc1\u5931\u8d25"}}); c.Abort(); return }
-		var user model.User
-		if model.DB.First(&user, uid).Error != nil { c.JSON(401, gin.H{"error": gin.H{"message": "\u7528\u6237\u4e0d\u5b58\u5728"}}); c.Abort(); return }
-		c.Set("user", &user)
+		// Use cached lookup instead of raw DB query on hot path
+		user, ok := core.CachedLookupUser(uid)
+		if !ok { c.JSON(401, gin.H{"error": gin.H{"message": "\u7528\u6237\u4e0d\u5b58\u5728"}}); c.Abort(); return }
+		c.Set("user", user)
 		c.Set("auth", &AuthInfo{UserID: user.ID, IsSuper: user.ID == model.SuperAdminID, IsAdmin: user.Role == "admin" || user.Role == "operator", IsAdminToken: false})
 		c.Next()
 	}

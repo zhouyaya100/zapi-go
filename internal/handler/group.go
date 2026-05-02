@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/gin-gonic/gin"
@@ -91,6 +92,38 @@ func HandleUpdateGroup(c *gin.Context) {
 	}
 	if v, ok := req["model_rate_limits"].(string); ok {
 		g.ModelRateLimits = v
+	} else if arr, ok := req["model_rate_limits"].([]interface{}); ok {
+		mrlMap := make(map[string]interface{})
+		for _, item := range arr {
+			if m, ok := item.(map[string]interface{}); ok {
+				modelName, _ := m["model"].(string)
+				if modelName == "" {
+					continue
+				}
+				entry := map[string]interface{}{}
+				if rpm, ok := m["rpm"].(float64); ok {
+					entry["rpm"] = int(rpm)
+				} else {
+					entry["rpm"] = 0
+				}
+				if tpm, ok := m["tpm"].(float64); ok {
+					entry["tpm"] = int64(tpm)
+				} else {
+					entry["tpm"] = 0
+				}
+				if blocked, ok := m["blocked"].(bool); ok {
+					entry["blocked"] = blocked
+				}
+				mrlMap[modelName] = entry
+			}
+		}
+		if len(mrlMap) > 0 {
+			if b, err := json.Marshal(mrlMap); err == nil {
+				g.ModelRateLimits = string(b)
+			}
+		} else {
+			g.ModelRateLimits = ""
+		}
 	}
 	model.DB.Save(&g)
 	core.InvalidateGroupCache(g.ID)
@@ -108,6 +141,7 @@ func HandleDeleteGroup(c *gin.Context) {
 	var affectedUsers []model.User
 	model.DB.Where("group_id = ?", g.ID).Find(&affectedUsers)
 	for _, u := range affectedUsers { core.InvalidateUserCache(u.ID) }
+	core.InvalidateAllTokenCache()
 	model.DB.Model(&model.User{}).Where("group_id = ?", g.ID).Update("group_id", nil)
 	core.InvalidateGroupCache(g.ID)
 	model.DB.Delete(&g)

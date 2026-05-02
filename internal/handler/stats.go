@@ -36,17 +36,25 @@ func HandleStats(c *gin.Context) {
 
 func HandleDashboard(c *gin.Context) {
 	u := getUserOrAdmin(c)
-	// Recent logs
+	// Recent logs (all users for admin/operator, own logs for regular user)
 	var recentLogs []model.Log
-	model.DB.Order("id desc").Limit(10).Find(&recentLogs)
+	if u.ID == model.SuperAdminID || u.Role == "admin" || u.Role == "operator" {
+		model.DB.Order("id desc").Limit(10).Find(&recentLogs)
+	} else {
+		model.DB.Where("user_id = ?", u.ID).Order("id desc").Limit(10).Find(&recentLogs)
+	}
 	rl := make([]gin.H, len(recentLogs))
 	for i, l := range recentLogs {
 		rl[i] = gin.H{"model": l.Model, "latency_ms": l.LatencyMs, "success": l.Success, "created_at": core.ToLocal(l.CreatedAt)}
 	}
-	// Model stats from logs
+	// Model stats from logs (all users for admin/operator)
+	logQuery := model.DB.Model(&model.Log{})
+	if !(u.ID == model.SuperAdminID || u.Role == "admin" || u.Role == "operator") {
+		logQuery = logQuery.Where("user_id = ?", u.ID)
+	}
 	type msRow struct{ Model string; Count int64; AvgLatency float64 }
 	var msRows []msRow
-	model.DB.Model(&model.Log{}).Select("model, count(*) as count, coalesce(avg(latency_ms),0) as avg_latency").Group("model").Order("count desc").Limit(10).Scan(&msRows)
+	logQuery.Select("model, count(*) as count, coalesce(avg(latency_ms),0) as avg_latency").Group("model").Order("count desc").Limit(10).Scan(&msRows)
 	ms := make([]gin.H, len(msRows))
 	for i, r := range msRows {
 		ms[i] = gin.H{"model": r.Model, "count": r.Count, "avg_latency": int(r.AvgLatency)}
@@ -54,21 +62,40 @@ func HandleDashboard(c *gin.Context) {
 	// User info
 	var tc int64
 	model.DB.Model(&model.Token{}).Where("user_id = ? AND enabled = ?", u.ID, true).Count(&tc)
-	var tr2, sr2, tp2, tcm2 int64
-	model.DB.Model(&model.Log{}).Where("user_id = ?", u.ID).Select("count(id), sum(case when success then 1 else 0 end), coalesce(sum(prompt_tokens),0), coalesce(sum(completion_tokens),0)").Row().Scan(&tr2, &sr2, &tp2, &tcm2)
 	gn := ""
 	if u.GroupID != nil {
 		if g, ok := core.CachedLookupGroup(*u.GroupID); ok { gn = g.Name }
 	}
-	c.JSON(200, gin.H{
+
+	isAdminOrOp := u.ID == model.SuperAdminID || u.Role == "admin" || u.Role == "operator"
+
+	// Personal stats (current user's own usage)
+	var ptr, psr, ptp, ptcm int64
+	model.DB.Model(&model.Log{}).Where("user_id = ?", u.ID).Select("count(id), sum(case when success then 1 else 0 end), coalesce(sum(prompt_tokens),0), coalesce(sum(completion_tokens),0)").Row().Scan(&ptr, &psr, &ptp, &ptcm)
+
+	result := gin.H{
 		"recent_logs": rl, "model_stats": ms,
 		"rpm": -1, "tpm": -1, "rate_mode": "admin", "model_limits": map[string]interface{}{},
 		"token_count": tc, "max_tokens": u.MaxTokens,
 		"token_quota": core.SafeInt(u.TokenQuota), "token_quota_used": core.SafeInt(u.TokenQuotaUsed),
 		"group_name": gn, "authorized_models": []string{},
-		"total_requests": tr2, "success_requests": sr2,
-		"total_prompt_tokens": core.SafeInt(tp2), "total_completion_tokens": core.SafeInt(tcm2),
-	})
+		// Personal stats
+		"total_requests": ptr, "success_requests": psr,
+		"total_prompt_tokens": core.SafeInt(ptp), "total_completion_tokens": core.SafeInt(ptcm),
+	}
+
+	// For admin/operator: add platform-wide stats
+	if isAdminOrOp {
+		var pltr, plsr, pltp, pltcm int64
+		model.DB.Model(&model.Log{}).Select("count(id), sum(case when success then 1 else 0 end), coalesce(sum(prompt_tokens),0), coalesce(sum(completion_tokens),0)").Row().Scan(&pltr, &plsr, &pltp, &pltcm)
+		result["platform_total_requests"] = pltr
+		result["platform_success_requests"] = plsr
+		result["platform_total_prompt_tokens"] = core.SafeInt(pltp)
+		result["platform_total_completion_tokens"] = core.SafeInt(pltcm)
+		result["platform_total_tokens"] = core.SafeInt(pltp + pltcm)
+	}
+
+	c.JSON(200, result)
 }
 
 func HandleUsageStats(c *gin.Context) {
@@ -165,7 +192,7 @@ func HandleUsageStats(c *gin.Context) {
 		for i, r := range rows {
 			key := um[r.UserID]
 			if key == "" {
-				key = "user:" + string(rune(r.UserID))
+				key = fmt.Sprintf("user:%d", r.UserID)
 			}
 			items[i] = gin.H{"key": key, "requests": r.Requests, "success": r.Success, "prompt_tokens": core.SafeInt(r.PromptTokens), "completion_tokens": core.SafeInt(r.CompletionTokens), "fail": r.Requests-r.Success, "success_rate": fmt.Sprintf("%.1f%%", float64(r.Success)/float64(max(r.Requests,1))*100), "total_tokens": core.SafeInt(r.PromptTokens+r.CompletionTokens), "avg_latency_ms": int(r.AvgLatencyMs)}
 		}
@@ -192,7 +219,7 @@ func HandleUsageStats(c *gin.Context) {
 		for i, r := range rows {
 			key := cm[r.ChannelID]
 			if key == "" {
-				key = "channel:" + string(rune(r.ChannelID))
+				key = fmt.Sprintf("channel:%d", r.ChannelID)
 			}
 			items[i] = gin.H{"key": key, "requests": r.Requests, "success": r.Success, "prompt_tokens": core.SafeInt(r.PromptTokens), "completion_tokens": core.SafeInt(r.CompletionTokens), "fail": r.Requests-r.Success, "success_rate": fmt.Sprintf("%.1f%%", float64(r.Success)/float64(max(r.Requests,1))*100), "total_tokens": core.SafeInt(r.PromptTokens+r.CompletionTokens), "avg_latency_ms": int(r.AvgLatencyMs)}
 		}

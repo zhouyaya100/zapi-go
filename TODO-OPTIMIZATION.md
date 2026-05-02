@@ -1,6 +1,6 @@
 # Zapi-Go 待优化清单
 
-> 审查时间：2026-04-30 (v4.0.2)，已完成的标记 ✅，其余待逐步修改
+> 审查时间：2026-05-02 (v4.3.0)，已完成的标记 ✅，其余待逐步修改
 
 ---
 
@@ -18,6 +18,10 @@
 - ✅ 日志文件只能生成两天 → errorlog.go重写修复4处bug
 - ✅ 版本号硬编码 → 统一更新到v4.0.1（仍4处硬编码，待ldflags方案）
 - ✅ 前端日期参数用toISOString生成UTC日期差8小时 → 新增localDate()函数生成本地日期
+- ✅ 心跳改轻量级：POST /v1/chat/completions → GET /v1/models，GPU满负荷不误判
+- ✅ 代理超时不算故障：超时不加FailCount、不触发熔断、不自动禁用
+- ✅ 心跳JSON注入风险消除：不再用json.Marshal构建请求体，改为GET请求无body
+- ✅ HTTP Client已复用：proxy.go使用sharedClient全局实例，不再每次请求创建
 
 ---
 
@@ -48,9 +52,10 @@
 - 错误消息等用户输入数据直接展示，需确认所有位置都未用v-html
 - 建议：全局搜索确保无v-html渲染用户输入，添加CSP header
 
-### [低] 模型名JSON注入 — internal/handler/channel.go:138, internal/core/heartbeat.go:62
-- fmt.Sprintf直接拼接模型名到JSON body，模型名含`"`可注入
-- 建议：改用json.Marshal构建JSON body
+### [低] ~~模型名JSON注入~~ — internal/handler/channel.go:138 ~~internal/core/heartbeat.go:62~~
+- ~~fmt.Sprintf直接拼接模型名到JSON body，模型名含`"`可注入~~
+- ✅ 心跳已改为GET /v1/models无请求体，不再有注入风险
+- channel.go手动测试仍有此风险，建议改用json.Marshal
 
 ---
 
@@ -72,9 +77,9 @@
 - InvalidateAllTokenCache()每5秒清空所有token缓存，大量token时缓存几乎无效
 - 建议：维护tokenID→apiKey反向索引，精准失效单个token
 
-### [中] 代理处理器每次创建新HTTP Client — internal/handler/proxy.go:29-36
-- getHTTPClient()每次请求创建http.Client，可复用
-- 建议：创建全局http.Client实例，仅配置变更时重建
+### [中] ~~代理处理器每次创建新HTTP Client~~ — ~~internal/handler/proxy.go:29-36~~
+- ~~getHTTPClient()每次请求创建http.Client，可复用~~
+- ✅ 已改为sharedClient全局实例（v4.2.x），仅配置变更时需重建
 
 ### [低] 本地缓存驱逐策略 — internal/core/cache.go:66-74
 - 缓存满时随机删除10%，无法保证淘汰最不活跃的条目
@@ -158,13 +163,13 @@
 
 ## 前端
 
-### [高] app.js单文件过大 — static/app.js (491行, 56KB+)
-- 整个前端逻辑在一个JS文件中，无模块化
-- 建议：按功能拆分为多文件，使用ES modules
+### [高] ~~app.js单文件过大~~ — ~~static/app.js (491行, 56KB+)~~
+- ~~整个前端逻辑在一个JS文件中，无模块化~~
+- ✅ 已迁移到Vue 3 + Vite + Naive UI组件化SPA（/tmp/zapi-go-vue3/）
 
-### [高] index.html单文件过大 — static/index.html (1810行, 119KB)
-- 所有页面模板堆叠在一个HTML文件中
-- 建议：利用已有的static/js/components/*.html文件异步加载
+### [高] ~~index.html单文件过大~~ — ~~static/index.html (1810行, 119KB)~~
+- ~~所有页面模板堆叠在一个HTML文件中~~
+- ✅ 已迁移到Vue 3组件化架构
 
 ### [中] 前端未处理JWT过期 — static/app.js:74-82
 - 收到401只设authError不自动跳转登录页，用户操作静默失败
@@ -178,9 +183,9 @@
 - 错误消息、模型名、渠道名等用户输入数据直接展示
 - 建议：全局审查确保无v-html渲染用户输入
 
-### [低] 前端未压缩 — static/index.html, static/app.js
-- HTML和JS未压缩，app.js 56KB可minify到约30KB
-- 建议：构建时使用minifier
+### [低] ~~前端未压缩~~ — ~~static/index.html, static/app.js~~
+- ~~HTML和JS未压缩，app.js 56KB可minify到约30KB~~
+- ✅ Vite构建自动minify + tree-shake + code-split
 
 ### [低] localStorage存储JWT — static/app.js:100
 - 容易被XSS窃取
@@ -194,7 +199,7 @@
 - TzDateExpr()使用PostgreSQL语法INTERVAL，ILIKE也是PG特有，用SQLite会报错
 - 建议：根据数据库类型选择SQL方言，或文档明确仅支持PostgreSQL
 
-### [中] 心跳检测串行执行 — internal/core/heartbeat.go:51-94
+### [中] 心跳检测串行执行 — internal/core/heartbeat.go
 - checkAllChannels串行检测所有渠道，渠道多时一轮检测可能超过心跳间隔
 - 建议：使用goroutine并发检测，或限制并发数
 

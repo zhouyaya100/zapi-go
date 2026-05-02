@@ -22,3 +22,9 @@ _*.mjs
 errlog-test*.mjs
 vtest.mjs
 test-all.*
+zapi-go
+zapi-go-linux
+zapi-go-win.exe
+zapi-go-local
+server
+static/dist/

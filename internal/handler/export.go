@@ -28,7 +28,9 @@ func exportDetail(c *gin.Context, fmt_ string) {
 		_, dtOut := core.ParseDateFilters("", dt)
 		if dtOut != "" { qry = qry.Where("created_at < ?", dtOut) }
 	}
-	if uid := c.Query("user_id"); uid != "" {
+	if fuid, ok := c.Get("_force_user_id"); ok {
+		qry = qry.Where("user_id = ?", fuid)
+	} else if uid := c.Query("user_id"); uid != "" {
 		if id, err := strconv.ParseUint(uid, 10, 64); err == nil { qry = qry.Where("user_id = ?", id) }
 	}
 	if m := c.Query("model"); m != "" { qry = qry.Where("model ILIKE ?", "%"+m+"%") }
@@ -54,7 +56,7 @@ func exportDetail(c *gin.Context, fmt_ string) {
 	}
 
 	var logs []model.Log
-	qry.Order("id desc").Limit(100000).Find(&logs)
+	qry.Order("id desc").Limit(50000).Find(&logs)
 	um := make(map[uint]string)
 	var users []model.User
 	model.DB.Select("id, username").Find(&users)
@@ -91,7 +93,9 @@ func exportGrouped(c *gin.Context, groupBy string, fmt_ string) {
 		_, dtOut := core.ParseDateFilters("", dt)
 		if dtOut != "" { qry = qry.Where("created_at < ?", dtOut) }
 	}
-	if uid := c.Query("user_id"); uid != "" {
+	if fuid, ok := c.Get("_force_user_id"); ok {
+		qry = qry.Where("user_id = ?", fuid)
+	} else if uid := c.Query("user_id"); uid != "" {
 		if id, err := strconv.ParseUint(uid, 10, 64); err == nil { qry = qry.Where("user_id = ?", id) }
 	}
 	if m := c.Query("model"); m != "" { qry = qry.Where("model ILIKE ?", "%"+m+"%") }
@@ -184,8 +188,8 @@ func HandleMyExportXLSX(c *gin.Context) { handleMyExport(c, "xlsx") }
 
 func handleMyExport(c *gin.Context, fmt_ string) {
 	u := getUserOrAdmin(c)
-	// Force user_id filter
-	c.Request.URL.RawQuery += "&user_id=" + strconv.FormatUint(uint64(u.ID), 10)
+	// Force user_id filter via context instead of RawQuery manipulation
+	c.Set("_force_user_id", u.ID)
 	groupBy := c.DefaultQuery("group_by", "detail")
 	if groupBy == "" || groupBy == "detail" {
 		exportDetail(c, fmt_)
@@ -240,12 +244,23 @@ func writeCSVSummary(c *gin.Context, items []map[string]interface{}, nowStr stri
 }
 
 // XLSX writers
+func xlsxCol(i int) string {
+	n := i + 1
+	var col string
+	for n > 0 {
+		n--
+		col = string(rune('A'+n%26)) + col
+		n /= 26
+	}
+	return col
+}
+
 func writeXLSXDetail(c *gin.Context, rows []map[string]interface{}, nowStr string) {
 	f := excelize.NewFile()
 	sheet := "请求明细"
 	f.SetSheetName("Sheet1", sheet)
 	headers := []string{"ID", "用户名", "令牌名", "渠道名", "模型", "流式", "输入Token", "输出Token", "总Token", "延迟(ms)", "成功", "错误信息", "客户端IP", "时间"}
-	for i, h := range headers { f.SetCellValue(sheet, fmt.Sprintf("%c1", 'A'+i), h) }
+	for i, h := range headers { f.SetCellValue(sheet, xlsxCol(i)+"1", h) }
 	for i, r := range rows {
 		row := i + 2
 		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), r["id"])
@@ -275,7 +290,7 @@ func writeXLSXGrouped(c *gin.Context, items []map[string]interface{}, groupBy st
 	f.SetSheetName("Sheet1", sheet)
 	labels := map[string]string{"day": "日期", "user": "用户", "model": "模型", "channel": "渠道"}
 	headers := []string{labels[groupBy], "请求数", "成功数", "失败数", "成功率", "输入Token", "输出Token", "总Token", "平均延迟(ms)"}
-	for i, h := range headers { f.SetCellValue(sheet, fmt.Sprintf("%c1", 'A'+i), h) }
+	for i, h := range headers { f.SetCellValue(sheet, xlsxCol(i)+"1", h) }
 	for i, r := range items {
 		row := i + 2
 		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), r["key"])
@@ -299,7 +314,7 @@ func writeXLSXSummary(c *gin.Context, items []map[string]interface{}, nowStr str
 	sheet := "用量汇总"
 	f.SetSheetName("Sheet1", sheet)
 	headers := []string{"用户", "模型", "渠道", "请求数", "成功数", "失败数", "成功率", "输入Token", "输出Token", "总Token", "平均延迟(ms)"}
-	for i, h := range headers { f.SetCellValue(sheet, fmt.Sprintf("%c1", 'A'+i), h) }
+	for i, h := range headers { f.SetCellValue(sheet, xlsxCol(i)+"1", h) }
 	for i, r := range items {
 		row := i + 2
 		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), r["user"])

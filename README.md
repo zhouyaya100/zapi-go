@@ -17,7 +17,7 @@ internal/
 │   ├── captcha.go           # 验证码生成/校验 (纯Go PNG)
 │   ├── db.go                # InitDB/SeedDefaults
 │   ├── errorlog.go          # 错误日志环形缓冲 + 文件持久化 + 按天切割
-│   ├── heartbeat.go         # 渠道心跳检测 + 故障/恢复通知 + AutoDisable控制
+│   ├── heartbeat.go         # 轻量级心跳检测(GET /v1/models) + 故障/恢复通知 + AutoDisable控制
 │   ├── helper.go            # 时区/安全整数/日期解析/模型映射规范化
 │   ├── logwriter.go         # 批量日志写入 (channel 65536)
 │   ├── quota.go             # 异步配额扣减 (channel 65536)
@@ -34,7 +34,7 @@ internal/
 │   ├── helpers.go           # 版号/我的面板/我的用量
 │   ├── log.go               # 日志查询
 │   ├── notification.go      # 通知CRUD+批量发送+广播
-│   ├── proxy.go             # OpenAI兼容代理转发 (函数化架构: 认证→限流→路由→转发→计费)
+│   ├── proxy.go             # OpenAI兼容代理转发 (函数化架构: 认证→限流→路由→转发→计费, 超时不算故障)
 │   ├── settings.go          # 系统设置 (超管专属, 含心跳设置+AutoDisable开关恢复)
 │   ├── stats.go             # 统计/用量/仪表盘
 │   ├── token.go             # 令牌CRUD+充值 (含分页)
@@ -45,7 +45,7 @@ internal/
 └── ratelimit/
     ├── ratelimit.go         # API限流 (64分片+FNV32)
     └── resolve.go           # 统一速率限制解析 (唯一真相源)
-static/                      # 前端SPA (Vue 3 + Tailwind CSS)
+static/                      # 前端SPA (Vue 3 + Vite + Naive UI)
 ```
 
 ## 快速开始
@@ -80,9 +80,32 @@ cp config.yaml myconfig.yaml
 | `log.error_max_days` | 30 | 错误日志文件保留天数 |
 | `log.retention_days` | 90 | 请求日志数据库保留天数 |
 | `heartbeat.enabled` | true | 心跳检测开关 |
-| `heartbeat.auto_disable` | true | 渠道故障自动禁用 (关闭则仅告警) |
 | `heartbeat.interval` | 60 | 检测间隔(秒) |
 | `heartbeat.timeout` | 10 | 检测超时(秒) |
+
+## 轻量级心跳 (v4.3.0)
+
+心跳检测使用 `GET /v1/models` 而非 `POST /v1/chat/completions`，只测服务器连通性，不算力：
+
+| 响应 | 判定 |
+|------|------|
+| 连接失败（DNS/连接拒绝） | 真正故障，FailCount+1，可能触发自动禁用 |
+| 5xx | 服务器不健康，FailCount+1 |
+| 其他（200/401/403/404/429等） | 服务器存活，FailCount清零 |
+
+GPU满负荷时 /v1/models 秒回，不会被误判为故障。
+
+## 代理超时不算故障 (v4.3.0)
+
+代理请求超时（context deadline）只代表上游慢，不代表上游挂了：
+
+| 错误类型 | 行为 |
+|----------|------|
+| 超时 | 不加FailCount，不触发熔断，不排除渠道，仅记日志和延迟 |
+| 连接拒绝/DNS失败 | 加FailCount，触发熔断，排除渠道重试 |
+| 上游5xx | 加FailCount，触发熔断，排除渠道重试 |
+
+GPU满负荷时：代理请求可能超时但渠道不会被禁用/熔断。
 
 ## 渠道故障自动禁用 (v4.0.x)
 
@@ -192,7 +215,8 @@ GET /api/users                       → [...]（无分页，向后兼容）
 | `authenticateRequest` | API Key验证 + Token/User缓存查询 |
 | `checkQuotaAndRateLimit` | 令牌额度 + 用户状态 + 限流 + 模型权限 |
 | `buildUpstreamRequest` | 模型映射 + stream_options注入 + 请求构建 |
-| `handleChannelFail` | fail_count递增 + AutoDisable检查 + 路由池更新 |
+| `handleChannelFail` | fail_count递增 + AutoDisable检查 + 路由池更新（仅真正故障调用） |
+| `handleChannelTimeout` | 仅记延迟和请求数，不触发熔断/禁用（超时调用） |
 | `handleChannelSuccess` | fail_count清零 + 路由池更新 |
 | `sanitizeUpstreamError` | 清洗上游错误（隐藏Python traceback等） |
 | `processStreamResponse` | SSE流式转发 + token计数 + TPM记账 + 配额扣减 |
@@ -250,9 +274,25 @@ tail -f zapi.log # 查看日志
 
 ## 版本
 
-v4.0.2
+v4.3.0
 
 ## 变更日志
+
+### v4.3.0 (2026-05-02)
+
+**新功能**
+- 轻量级心跳：从 `POST /v1/chat/completions` 改为 `GET /v1/models`，GPU满负荷时不会误判故障
+- 代理超时不算故障：区分超时和真正故障（连接拒绝/DNS/5xx），超时不加FailCount、不触发熔断、不自动禁用
+- 新增 `handleChannelTimeout` 和 `Health.RecordTimeout`：超时仅记延迟，不影响渠道可用性
+
+**改进**
+- 心跳判定扩展：非5xx响应均视为服务器存活（200/401/403/404/429等）
+- 超时渠道不加入排除列表，下次请求仍可路由到同一渠道
+- 超时日志标记为"代理超时(不计故障)"，便于区分
+
+**前端**
+- Vue 3 + Vite + Naive UI 重写（从单文件CDN迁移到组件化SPA）
+- 渠道页心跳延迟💓显示修复
 
 ### v4.0.2 (2026-04-30)
 

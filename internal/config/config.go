@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"sync"
 	"time"
 	"gopkg.in/yaml.v3"
 )
@@ -50,9 +52,11 @@ type CacheConfig struct {
 	MaxEntries int  `yaml:"max_entries"`
 }
 type RateLimitConfig struct {
-	Enabled bool `yaml:"enabled"`
-	RPM     int  `yaml:"rpm"`
-	IPRPM   int  `yaml:"ip_rpm"`
+	Enabled bool  `yaml:"enabled"`
+	RPM     int   `yaml:"rpm"`
+	TPM     int64 `yaml:"tpm"`
+	IPRPM   int   `yaml:"ip_rpm"`
+	IPTPM   int64 `yaml:"ip_tpm"`
 }
 type LogConfig struct {
 	BatchSize            int `yaml:"batch_size"`
@@ -71,33 +75,49 @@ type RegistrationConfig struct {
 	MinPasswordLength int    `yaml:"min_password_length"`
 }
 type HeartbeatConfig struct {
-	Enabled     bool `yaml:"enabled"`
-	AutoDisable bool `yaml:"auto_disable"`
-	Interval    int  `yaml:"interval"`
-	Timeout     int  `yaml:"timeout"`
-	Retries     int  `yaml:"retries"`
+	Enabled  bool `yaml:"enabled"`
+	Interval int  `yaml:"interval"`
+	Timeout  int  `yaml:"timeout"`
+	Retries  int  `yaml:"retries"`
 }
+
+var cfgMu sync.RWMutex
+
+// ConfigFilePath stores the absolute path of the loaded config file for safe writes
+var ConfigFilePath string
+
+func GetCfg() Config { cfgMu.RLock(); defer cfgMu.RUnlock(); return Cfg }
+func SetCfg(f func()) { cfgMu.Lock(); defer cfgMu.Unlock(); f() }
 
 var Cfg = Config{
 	Server:       ServerConfig{Host: "0.0.0.0", Port: 65000, Workers: 4, TimezoneOffset: 8},
 	Database:     DatabaseConfig{URL: "sqlite:///zapi.db", PoolSize: 20, MaxOverflow: 10, PoolRecycle: 3600},
-	Security:     SecurityConfig{AdminToken: "sk-lite-admin-token", JWTExpireHours: 24},
+	Security:     SecurityConfig{CORSOrigins: "*", JWTExpireHours: 24},
 	Proxy:        ProxyConfig{Timeout: 60, MaxConnections: 100, MaxKeepalive: 20, KeepaliveExpiry: 60, RetryCount: 1},
 	Cache:        CacheConfig{Enabled: true, TTL: 300, MaxEntries: 1000},
 	RateLimit:    RateLimitConfig{Enabled: true, RPM: 60, IPRPM: 120},
 	Log:          LogConfig{BatchSize: 50, BatchInterval: 5, RetentionDays: 30, CleanupIntervalHours: 24, CleanupBatchSize: 500, ErrorMaxEntries: 1000},
 	Registration: RegistrationConfig{AllowRegister: true, DefaultMaxTokens: 3, DefaultTokenQuota: -1, DefaultGroup: "Default", MinPasswordLength: 8},
-	Heartbeat:    HeartbeatConfig{Enabled: true, AutoDisable: true, Interval: 60, Timeout: 10, Retries: 3},
+	Heartbeat:    HeartbeatConfig{Enabled: true, Interval: 60, Timeout: 10, Retries: 3},
 }
 
 func Load(path string) error {
-	data, err := os.ReadFile(path)
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolve config path: %w", err)
+	}
+	ConfigFilePath = absPath
+	data, err := os.ReadFile(absPath)
 	if err != nil { return fmt.Errorf("read config: %w", err) }
-	if err := yaml.Unmarshal(data, &Cfg); err != nil { return fmt.Errorf("parse config: %w", err) }
-	if v := os.Getenv("ZAPI_ADMIN_TOKEN"); v != "" { Cfg.Security.AdminToken = v }
-	if v := os.Getenv("ZAPI_SECRET_KEY"); v != "" { Cfg.Security.SecretKey = v }
-	if v := os.Getenv("ZAPI_DB_URL"); v != "" { Cfg.Database.URL = v }
-	if Cfg.Security.SecretKey == "" { Cfg.Security.SecretKey = fmt.Sprintf("sk-secret-%d", time.Now().UnixNano()) }
+	var parseErr error
+	SetCfg(func() {
+		if parseErr = yaml.Unmarshal(data, &Cfg); parseErr != nil { return }
+		if v := os.Getenv("ZAPI_ADMIN_TOKEN"); v != "" { Cfg.Security.AdminToken = v }
+		if v := os.Getenv("ZAPI_SECRET_KEY"); v != "" { Cfg.Security.SecretKey = v }
+		if v := os.Getenv("ZAPI_DB_URL"); v != "" { Cfg.Database.URL = v }
+		if Cfg.Security.SecretKey == "" { Cfg.Security.SecretKey = fmt.Sprintf("sk-secret-%d", time.Now().UnixNano()) }
+	})
+	if parseErr != nil { return fmt.Errorf("parse config: %w", parseErr) }
 	return nil
 }
 

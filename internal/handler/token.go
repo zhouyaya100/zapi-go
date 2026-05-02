@@ -7,6 +7,7 @@ import (
 	"github.com/zapi/zapi-go/internal/core"
 	"github.com/zapi/zapi-go/internal/middleware"
 	"github.com/zapi/zapi-go/internal/model"
+	"gorm.io/gorm"
 )
 
 func HandleListTokens(c *gin.Context) {
@@ -32,7 +33,7 @@ func HandleListTokens(c *gin.Context) {
 	for i, t := range tokens {
 		result[i] = gin.H{
 			"id": t.ID, "user_id": t.UserID, "username": userMap[t.UserID],
-			"name": t.Name, "key": core.MaskKey(t.Key), "models": t.Models,
+			"name": t.Name, "key": t.Key, "models": t.Models,
 			"enabled": t.Enabled, "quota_limit": core.SafeInt(t.QuotaLimit),
 			"quota_used": core.SafeInt(t.QuotaUsed),
 			"expires_at": core.FmtTimePtr(t.ExpiresAt), "created_at": core.FmtTimeVal(t.CreatedAt),
@@ -74,7 +75,9 @@ func HandleCreateToken(c *gin.Context) {
 		return
 	}
 	var tu *model.User
-	if middleware.GetAuth(c).IsAdminToken {
+	auth := middleware.GetAuth(c)
+	isAdmin := auth != nil && auth.IsAdminToken
+	if isAdmin {
 		uid := uint(1)
 		if req.UserID != nil {
 			uid = *req.UserID
@@ -95,7 +98,7 @@ func HandleCreateToken(c *gin.Context) {
 		return
 	}
 	key := core.GenerateAPIKey()
-	if !middleware.GetAuth(c).IsAdminToken && req.Models != "" && tu.AllowedModels != "" {
+	if !isAdmin && req.Models != "" && tu.AllowedModels != "" {
 		requested := make(map[string]bool)
 		for _, m := range core.SplitComma(req.Models) { requested[m] = true }
 		for m := range requested {
@@ -119,7 +122,9 @@ func HandleUpdateToken(c *gin.Context) {
 	}
 	var req map[string]interface{}
 	c.ShouldBindJSON(&req)
-	if !middleware.GetAuth(c).IsAdminToken {
+	auth2 := middleware.GetAuth(c)
+	isAdmin2 := auth2 != nil && auth2.IsAdminToken
+	if !isAdmin2 {
 		u := getUserOrAdmin(c)
 		if tk.UserID != u.ID {
 			c.JSON(403, gin.H{"error": gin.H{"message": "\u65e0\u6743\u64cd\u4f5c\u6b64\u4ee4\u724c"}})
@@ -132,7 +137,7 @@ func HandleUpdateToken(c *gin.Context) {
 	if v, ok := req["models"].(string); ok {
 		if !middleware.GetAuth(c).IsAdminToken {
 			u := getUserOrAdmin(c)
-			if v != "" && u.AllowedModels != "" {
+			if !isAdmin2 && v != "" && u.AllowedModels != "" {
 				for _, m := range core.SplitComma(v) {
 					found := false
 					for _, am := range core.SplitComma(u.AllowedModels) { if am == m { found = true; break } }
@@ -168,13 +173,19 @@ func HandleRechargeToken(c *gin.Context) {
 		Amount int64 `json:"amount"`
 	}
 	c.ShouldBindJSON(&req)
+	if req.Amount <= 0 {
+		c.JSON(400, gin.H{"error": gin.H{"message": "\u5145\u503c\u6570\u91cf\u5fc5\u987b\u5927\u4e8e0"}})
+		return
+	}
 	if tk.QuotaLimit == -1 {
 		c.JSON(400, gin.H{"error": gin.H{"message": "\u4ee4\u724c\u989d\u5ea6\u4e3a\u65e0\u9650\uff0c\u65e0\u9700\u5145\u503c"}})
 		return
 	}
-	tk.QuotaLimit += req.Amount
-	model.DB.Save(&tk)
+	// Atomic update to avoid race condition on concurrent recharge
+	model.DB.Model(&model.Token{}).Where("id = ?", tk.ID).UpdateColumn("quota_limit", gorm.Expr("quota_limit + ?", req.Amount))
 	core.InvalidateTokenCache(tk.Key)
+	// Re-read token data to return accurate values
+	model.DB.First(&tk, id)
 	c.JSON(200, gin.H{"success": true, "quota_limit": core.SafeInt(tk.QuotaLimit), "quota_used": core.SafeInt(tk.QuotaUsed)})
 }
 
@@ -185,7 +196,8 @@ func HandleDeleteToken(c *gin.Context) {
 		c.JSON(404, gin.H{"error": gin.H{"message": "\u4ee4\u724c\u4e0d\u5b58\u5728"}})
 		return
 	}
-	if !middleware.GetAuth(c).IsAdminToken {
+	auth3 := middleware.GetAuth(c)
+	if auth3 == nil || !auth3.IsAdminToken {
 		u := getUserOrAdmin(c)
 		if tk.UserID != u.ID {
 			c.JSON(403, gin.H{"error": gin.H{"message": "\u65e0\u6743\u64cd\u4f5c\u6b64\u4ee4\u724c"}})

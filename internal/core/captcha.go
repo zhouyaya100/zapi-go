@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	cryptoRand "crypto/rand"
 	"image"
 	"image/color"
 	"image/png"
@@ -19,9 +20,9 @@ type captchaEntry struct { Code string; Expires time.Time }
 
 func GenerateCaptcha() (string, []byte) {
 	const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-	b := make([]byte, 32); for i := range b { b[i] = chars[rand.Intn(len(chars))] }
+	b := make([]byte, 32); randBytes := make([]byte, 32); cryptoRand.Read(randBytes); for i := range b { b[i] = chars[int(randBytes[i])%len(chars)] }
 	id := string(b)
-	code := make([]byte, 4); for i := range code { code[i] = chars[rand.Intn(len(chars))] }
+	code := make([]byte, 4); codeRand := make([]byte, 4); cryptoRand.Read(codeRand); for i := range code { code[i] = chars[int(codeRand[i])%len(chars)] }
 	captchaStoreMu.Lock()
 	if len(captchaStore) > 1000 { now := time.Now(); for k, v := range captchaStore { if v.Expires.Before(now) { delete(captchaStore, k) } } }
 	captchaStore[id] = captchaEntry{Code: string(code), Expires: time.Now().Add(5 * time.Minute)}

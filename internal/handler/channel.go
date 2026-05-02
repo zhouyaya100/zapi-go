@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/zapi/zapi-go/internal/config"
 	"github.com/zapi/zapi-go/internal/core"
 	"github.com/zapi/zapi-go/internal/core/routing"
 	"github.com/zapi/zapi-go/internal/model"
@@ -28,8 +28,19 @@ func HandleListChannels(c *gin.Context) {
 	}
 	qry.Find(&channels)
 
+	// Batch-load upstream group links for all channels (avoid N+1)
+	var allLinks []model.UpstreamGroupChannel
+	model.DB.Find(&allLinks)
+	channelUGMap := make(map[uint][]uint)
+	for _, link := range allLinks {
+		channelUGMap[link.ChannelID] = append(channelUGMap[link.ChannelID], link.UpstreamGroupID)
+	}
+
 	result := make([]gin.H, len(channels))
 	for i, ch := range channels {
+		ugIDs := channelUGMap[ch.ID]
+		if ugIDs == nil { ugIDs = []uint{} }
+
 		result[i] = gin.H{
 			"id": ch.ID, "name": ch.Name, "type": ch.Type,
 			"base_url": ch.BaseURL, "api_key": core.MaskKey(ch.APIKey),
@@ -38,6 +49,7 @@ func HandleListChannels(c *gin.Context) {
 			"weight": ch.Weight, "priority": ch.Priority, "enabled": ch.Enabled,
 			"auto_ban": ch.AutoBan, "fail_count": ch.FailCount,
 			"test_time": core.FmtTimePtr(ch.TestTime), "response_time": ch.ResponseTime,
+			"upstream_group_ids": ugIDs,
 			"created_at": core.FmtTimeVal(ch.CreatedAt),
 		}
 	}
@@ -51,7 +63,7 @@ func HandleListChannels(c *gin.Context) {
 func HandleCreateChannel(c *gin.Context) {
 	var ch model.Channel
 	if err := c.ShouldBindJSON(&ch); err != nil {
-		c.JSON(400, gin.H{"error": gin.H{"message": "\u8bf7\u6c42\u53c2\u6570\u9519\u8bef"}})
+		c.JSON(400, gin.H{"error": gin.H{"message": "请求参数错误"}})
 		return
 	}
 	if ch.Type == "" {
@@ -67,12 +79,12 @@ func HandleUpdateChannel(c *gin.Context) {
 	id := c.Param("id")
 	var ch model.Channel
 	if model.DB.First(&ch, id).Error != nil {
-		c.JSON(404, gin.H{"error": gin.H{"message": "\u6e20\u9053\u4e0d\u5b58\u5728"}})
+		c.JSON(404, gin.H{"error": gin.H{"message": "渠道不存在"}})
 		return
 	}
 	var req map[string]interface{}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": gin.H{"message": "\u8bf7\u6c42\u53c2\u6570\u9519\u8bef"}})
+		c.JSON(400, gin.H{"error": gin.H{"message": "请求参数错误"}})
 		return
 	}
 	if v, ok := req["name"].(string); ok {
@@ -114,9 +126,11 @@ func HandleDeleteChannel(c *gin.Context) {
 	id := c.Param("id")
 	var ch model.Channel
 	if model.DB.First(&ch, id).Error != nil {
-		c.JSON(404, gin.H{"error": gin.H{"message": "\u6e20\u9053\u4e0d\u5b58\u5728"}})
+		c.JSON(404, gin.H{"error": gin.H{"message": "渠道不存在"}})
 		return
 	}
+	// Delete all join table links for this channel
+	model.DB.Where("channel_id = ?", ch.ID).Delete(&model.UpstreamGroupChannel{})
 	model.DB.Delete(&ch)
 	routing.Pool.RemoveChannel(ch.ID)
 	c.JSON(200, gin.H{"success": true})
@@ -126,7 +140,7 @@ func HandleTestChannel(c *gin.Context) {
 	id := c.Param("id")
 	var ch model.Channel
 	if model.DB.First(&ch, id).Error != nil {
-		c.JSON(404, gin.H{"error": gin.H{"message": "\u6e20\u9053\u4e0d\u5b58\u5728"}})
+		c.JSON(404, gin.H{"error": gin.H{"message": "渠道不存在"}})
 		return
 	}
 	testModel := ""
@@ -134,7 +148,7 @@ func HandleTestChannel(c *gin.Context) {
 		testModel = strings.TrimSpace(strings.Split(ch.Models, ",")[0])
 	}
 	if testModel == "" {
-		c.JSON(200, gin.H{"success": false, "latency_ms": 0, "model": "-", "status": "\u65e0\u6a21\u578b\u914d\u7f6e"})
+		c.JSON(200, gin.H{"success": false, "latency_ms": 0, "model": "-", "status": "无模型配置"})
 		return
 	}
 	modelToUse := testModel
@@ -149,9 +163,9 @@ func HandleTestChannel(c *gin.Context) {
 	if strings.HasSuffix(base, "/v1") {
 		testURL = base[:len(base)-3] + "/v1/chat/completions"
 	}
-	body := fmt.Sprintf(`{"model":"%s","messages":[{"role":"user","content":"Hi"}],"max_tokens":5}`, modelToUse)
+	testBody, _ := json.Marshal(map[string]interface{}{"model": modelToUse, "messages": []map[string]string{{"role": "user", "content": "Hi"}}, "max_tokens": 5})
 	client := &http.Client{Timeout: 15 * time.Second}
-	req, _ := http.NewRequest("POST", testURL, strings.NewReader(body))
+	req, _ := http.NewRequest("POST", testURL, bytes.NewReader(testBody))
 	req.Header.Set("Authorization", "Bearer "+ch.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 	start := time.Now()
@@ -159,7 +173,7 @@ func HandleTestChannel(c *gin.Context) {
 	latency := int(time.Since(start).Milliseconds())
 	if err != nil {
 		ch.FailCount++
-		if config.Cfg.Heartbeat.AutoDisable && ch.AutoBan && ch.FailCount >= 5 {
+		if ch.AutoBan && ch.FailCount >= 5 {
 			ch.Enabled = false
 		}
 		now := time.Now().UTC()
@@ -168,7 +182,21 @@ func HandleTestChannel(c *gin.Context) {
 		model.DB.Save(&ch)
 		routing.Pool.UpdateFailCount(ch.ID, ch.FailCount, ch.Enabled)
 		core.ErrLog.Error(fmt.Sprintf("渠道测试失败: [%s] ID:%s 模型:%s 错误:%s", ch.Name, id, modelToUse, err.Error()))
-		c.JSON(200, gin.H{"success": false, "latency_ms": 0, "model": modelToUse, "status": "\u8fde\u63a5\u8d85\u65f6", "error": err.Error()[:200]})
+		// Friendly error messages based on error type
+		friendlyMsg := "连接失败"
+		errStr := err.Error()
+		if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline exceeded") {
+			friendlyMsg = "连接超时：上游服务器未在15秒内响应，请检查网络或接口地址"
+		} else if strings.Contains(errStr, "connection refused") {
+			friendlyMsg = "连接被拒绝：上游服务器未运行或端口错误"
+		} else if strings.Contains(errStr, "no such host") || strings.Contains(errStr, "lookup") {
+			friendlyMsg = "DNS解析失败：域名不存在或无法解析"
+		} else if strings.Contains(errStr, "TLS") || strings.Contains(errStr, "certificate") {
+			friendlyMsg = "TLS/证书错误：SSL握手失败"
+		} else if strings.Contains(errStr, "i/o timeout") {
+			friendlyMsg = "网络超时：请检查服务器地址和网络连通性"
+		}
+		c.JSON(200, gin.H{"success": false, "latency_ms": 0, "model": modelToUse, "status": friendlyMsg, "error": errStr})
 		return
 	}
 	defer resp.Body.Close()
@@ -186,11 +214,29 @@ func HandleTestChannel(c *gin.Context) {
 		errorStr := string(errorBody); if len(errorStr) > 300 { errorStr = errorStr[:300] }
 		if ch.Enabled {
 			ch.FailCount++
-			if config.Cfg.Heartbeat.AutoDisable && ch.AutoBan && ch.FailCount >= 5 { ch.Enabled = false }
+			if ch.AutoBan && ch.FailCount >= 5 { ch.Enabled = false }
 		}
 		model.DB.Save(&ch)
 		routing.Pool.UpdateFailCount(ch.ID, ch.FailCount, ch.Enabled)
 		core.ErrLog.Error(fmt.Sprintf("渠道测试失败: [%s] ID:%s HTTP:%d 模型:%s", ch.Name, id, resp.StatusCode, modelToUse))
-		c.JSON(200, gin.H{"success": false, "latency_ms": latency, "model": modelToUse, "status": fmt.Sprintf("HTTP %d", resp.StatusCode), "error": errorStr})
+		// Friendly HTTP error messages
+		httpMsg := fmt.Sprintf("HTTP %d", resp.StatusCode)
+		switch resp.StatusCode {
+		case 401:
+			httpMsg = "认证失败(401)：API Key无效或已过期"
+		case 403:
+			httpMsg = "权限不足(403)：该Key无权访问此模型"
+		case 404:
+			httpMsg = "接口不存在(404)：请检查Base URL地址"
+		case 429:
+			httpMsg = "请求过多(429)：上游速率限制，请稍后重试"
+		case 500:
+			httpMsg = "上游服务器错误(500)"
+		case 502:
+			httpMsg = "网关错误(502)：上游服务不可用"
+		case 503:
+			httpMsg = "服务不可用(503)：上游暂时过载或维护中"
+		}
+		c.JSON(200, gin.H{"success": false, "latency_ms": latency, "model": modelToUse, "status": httpMsg, "error": errorStr})
 	}
 }

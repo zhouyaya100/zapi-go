@@ -3,6 +3,7 @@ package handler
 import (
 	"os"
 	"sort"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zapi/zapi-go/internal/config"
@@ -11,6 +12,8 @@ import (
 	"github.com/zapi/zapi-go/internal/model"
 	"gopkg.in/yaml.v3"
 )
+
+var configMu sync.Mutex
 
 var yamlMap = map[string][2]string{
 	"jwt_expire_hours":         {"security", "jwt_expire_hours"},
@@ -40,7 +43,6 @@ var yamlMap = map[string][2]string{
 	"min_password_length":      {"registration", "min_password_length"},
 	"timezone_offset":          {"server", "timezone_offset"},
 	"heartbeat_enabled":        {"heartbeat", "enabled"},
-	"heartbeat_auto_disable":   {"heartbeat", "auto_disable"},
 	"heartbeat_interval":       {"heartbeat", "interval"},
 	"heartbeat_timeout":        {"heartbeat", "timeout"},
 }
@@ -95,7 +97,6 @@ func HandleGetSettings(c *gin.Context) {
 		"min_password_length":        config.Cfg.Registration.MinPasswordLength,
 		"timezone_offset":            config.Cfg.Server.TimezoneOffset,
 		"heartbeat_enabled":          config.Cfg.Heartbeat.Enabled,
-		"heartbeat_auto_disable":     config.Cfg.Heartbeat.AutoDisable,
 		"heartbeat_interval":         config.Cfg.Heartbeat.Interval,
 		"heartbeat_timeout":          config.Cfg.Heartbeat.Timeout,
 		// Read-only fields
@@ -112,6 +113,8 @@ func HandleGetSettings(c *gin.Context) {
 }
 
 func HandleUpdateSettings(c *gin.Context) {
+	configMu.Lock()
+	defer configMu.Unlock()
 	var req map[string]interface{}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": gin.H{"message": "\u8bf7\u6c42\u53c2\u6570\u9519\u8bef"}})
@@ -200,21 +203,6 @@ func HandleUpdateSettings(c *gin.Context) {
 			if v, ok := val.(float64); ok { config.Cfg.Server.TimezoneOffset = int(v) }
 		case "heartbeat_enabled":
 			if v, ok := val.(bool); ok { config.Cfg.Heartbeat.Enabled = v }
-		case "heartbeat_auto_disable":
-			if v, ok := val.(bool); ok && v != config.Cfg.Heartbeat.AutoDisable {
-				config.Cfg.Heartbeat.AutoDisable = v
-				if !v {
-					// Auto-disable turned off: re-enable all channels that were disabled by auto-ban
-					var chs []model.Channel
-					model.DB.Where("enabled = ? AND fail_count >= 5 AND auto_ban = ?", false, 5, true).Find(&chs)
-					for i := range chs {
-						chs[i].Enabled = true
-						chs[i].FailCount = 0
-						model.DB.Save(&chs[i])
-						routing.Pool.UpdateChannel(&chs[i])
-					}
-				}
-			}
 		case "heartbeat_interval":
 			if v, ok := val.(float64); ok { if int(v) >= 10 { config.Cfg.Heartbeat.Interval = int(v) } }
 		case "heartbeat_timeout":
@@ -225,7 +213,22 @@ func HandleUpdateSettings(c *gin.Context) {
 	// Write back to YAML
 	data, err := yaml.Marshal(&config.Cfg)
 	if err == nil {
-		os.WriteFile("config.yaml", data, 0644)
+		cfgPath := config.ConfigFilePath
+		if cfgPath == "" {
+			cfgPath = "config.yaml"
+		}
+		tmpFile := cfgPath + ".tmp"
+		if writeErr := os.WriteFile(tmpFile, data, 0644); writeErr == nil {
+			if renameErr := os.Rename(tmpFile, cfgPath); renameErr != nil {
+				// Failed to rename — clean up tmp file and report error
+				os.Remove(tmpFile)
+				c.JSON(500, gin.H{"error": gin.H{"message": "配置文件写入失败"}})
+				return
+			}
+		} else {
+			c.JSON(500, gin.H{"error": gin.H{"message": "配置文件写入失败"}})
+			return
+		}
 	}
 	c.JSON(200, gin.H{"success": true})
 }

@@ -45,8 +45,11 @@ func FmtTimeVal(t time.Time) string {
 }
 
 func TzDateExpr() string {
-	if config.Cfg.Server.TimezoneOffset == 0 { return "DATE(created_at)" }
-	return fmt.Sprintf("DATE(created_at + INTERVAL '%d hours')", config.Cfg.Server.TimezoneOffset)
+	offset := config.Cfg.Server.TimezoneOffset
+	if offset == 0 { return "DATE(created_at)" }
+	sign := "+"
+	if offset < 0 { sign = "" }
+	return fmt.Sprintf("DATE(created_at + INTERVAL '%s%d hours')", sign, offset)
 }
 
 func ParseDateFilters(df, dt string) (string, string) {

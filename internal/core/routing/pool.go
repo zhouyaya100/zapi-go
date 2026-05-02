@@ -6,25 +6,27 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/zapi/zapi-go/internal/model"
 )
 
 // ChannelInfo - lightweight channel for routing
 type ChannelInfo struct {
-	ID            uint
-	Name          string
-	Type          string
-	BaseURL       string
-	APIKey        string
-	Models        []string
-	ModelMapping  map[string]string
-	AllowedGroups map[string]bool
-	Weight        int
-	Priority      int
-	AutoBan       bool
-	FailCount     int
-	Enabled       bool
+	ID              uint
+	Name            string
+	Type            string
+	BaseURL         string
+	APIKey          string
+	Models          []string
+	ModelMapping    map[string]string
+	AllowedGroups   map[string]bool
+	Weight          int
+	Priority        int
+	AutoBan         bool
+	FailCount       atomic.Int32
+	Enabled         bool
+	UpstreamGroupIDs []uint // IDs of upstream groups this channel belongs to
 }
 
 // ChannelPool - inverted index for O(1) channel lookup
@@ -96,11 +98,23 @@ func (p *ChannelPool) UpdateFailCount(id uint, failCount int, enabled bool) {
 	defer p.mu.Unlock()
 	ch, ok := p.channels[id]
 	if !ok { return }
-	ch.FailCount = failCount
+	ch.FailCount.Store(int32(failCount))
 	if !enabled {
 		ch.Enabled = false
 		p.removeFromIndex(ch)
+	} else {
+		ch.Enabled = true
 	}
+}
+
+// IncrementFailCount atomically increments fail count and returns the new value
+func (p *ChannelPool) IncrementFailCount(id uint) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	ch, ok := p.channels[id]
+	if !ok { return 0 }
+	newVal := ch.FailCount.Add(1)
+	return int(newVal)
 }
 
 // rebuildSortedKeys rebuilds the pre-sorted priority keys for a model (must hold write lock)
@@ -114,12 +128,64 @@ func (p *ChannelPool) rebuildSortedKeys(model string) {
 }
 
 // Select - O(1) channel selection using inverted index with pre-sorted priorities
+// Now supports upstream groups: if model matches an upstream group alias, use group balancer
 func (p *ChannelPool) Select(modelName string, group *string, excludeIDs map[uint]bool, skipGroup ...bool) *ChannelInfo {
+	// Step 1: Check upstream groups first
+	ug := ResolveUpstream(modelName, group)
+	if ug != nil {
+		sel := p.SelectFromUpstreamGroup(ug, excludeIDs, skipGroup...)
+		if sel != nil {
+			return sel
+		}
+		// Upstream group matched but all channels unavailable (circuit-broken/disabled),
+		// fallback to normal pool selection
+	}
+
+	// Step 2: Normal channel selection
+	return p.selectFromPool(modelName, group, excludeIDs, skipGroup...)
+}
+
+// selectFromUpstreamGroup — select from an upstream group using its balancer strategy
+func (p *ChannelPool) SelectFromUpstreamGroup(ug *UpstreamGroupInfo, excludeIDs map[uint]bool, skipGroup ...bool) *ChannelInfo {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
+
+	// Collect candidate channels from this group (all treated equally)
+	var candidates []*ChannelInfo
+
+	for _, cid := range ug.ChannelIDs {
+		ch, ok := p.channels[cid]
+		if !ok || !ch.Enabled {
+			continue
+		}
+		// Check circuit breaker health
+		if !Health.IsAvailable(cid, ug.MaxFails, ug.FailTimeout) {
+			continue
+		}
+		candidates = append(candidates, ch)
+	}
+
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	selected := LB.SelectFromGroup(ug, candidates, excludeIDs)
+	if selected != nil {
+		LB.IncrRequest(selected.ID)
+	}
+	return selected
+}
+
+// selectFromPool — original Select logic
+// Note: we do NOT exclude upstream-group-managed channels here because:
+// if the model name matched an upstream group alias, Select() would have routed
+// through selectFromUpstreamGroup instead. Reaching here means the model name
+// does NOT match any alias, so channels should be available via normal routing.
+func (p *ChannelPool) selectFromPool(modelName string, group *string, excludeIDs map[uint]bool, skipGroup ...bool) *ChannelInfo {
 	priorities, ok := p.index[modelName]
 	if !ok { return nil }
 	priKeys := p.sortedKeys[modelName]
+
 	for _, pri := range priKeys {
 		var candidates []*ChannelInfo
 		for _, cid := range priorities[pri] {
@@ -141,8 +207,10 @@ func (p *ChannelPool) Select(modelName string, group *string, excludeIDs map[uin
 			for i, c := range candidates { weights[i] = c.Weight; if weights[i] < 1 { weights[i] = 1 } }
 			total := 0; for _, w := range weights { total += w }
 			r := rand.Intn(total); cum := 0
-			for i, w := range weights { cum += w; if r < cum { return candidates[i] } }
-			return candidates[0]
+			selected := candidates[0]
+			for i, w := range weights { cum += w; if r < cum { selected = candidates[i]; break } }
+			LB.IncrRequest(selected.ID)
+			return selected
 		}
 	}
 	return nil
@@ -152,6 +220,7 @@ func (p *ChannelPool) GetModelsForGroup(group *string) []string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	seen := make(map[string]bool); var result []string
+	// Models from channels
 	for modelName, channelIDs := range p.modelChannels {
 		for cid := range channelIDs {
 			ch, ok := p.channels[cid]
@@ -166,6 +235,22 @@ func (p *ChannelPool) GetModelsForGroup(group *string) []string {
 			break
 		}
 	}
+	// Models from upstream groups (alias = exposed model name)
+	Upstreams.mu.RLock()
+	for _, ug := range Upstreams.alias {
+		if !ug.Enabled { continue }
+		if group != nil {
+			gname := *group
+			if len(ug.AllowedGroups) > 0 && !ug.AllowedGroups[gname] { continue }
+		} else {
+			if len(ug.AllowedGroups) > 0 { continue }
+		}
+		if ug.Alias != "" && !seen[ug.Alias] {
+			seen[ug.Alias] = true
+			result = append(result, ug.Alias)
+		}
+	}
+	Upstreams.mu.RUnlock()
 	sort.Strings(result)
 	return result
 }
@@ -182,6 +267,16 @@ func (p *ChannelPool) GetAllEnabledModels() []string {
 			break
 		}
 	}
+	// Also include upstream group aliases
+	Upstreams.mu.RLock()
+	for _, ug := range Upstreams.alias {
+		if !ug.Enabled { continue }
+		if ug.Alias != "" && !seen[ug.Alias] {
+			seen[ug.Alias] = true
+			result = append(result, ug.Alias)
+		}
+	}
+	Upstreams.mu.RUnlock()
 	sort.Strings(result)
 	return result
 }
@@ -252,11 +347,21 @@ func ormToInfo(ch *model.Channel) *ChannelInfo {
 	if ch.ModelMapping != "" { json.Unmarshal([]byte(ch.ModelMapping), &mapping) }
 	groups := make(map[string]bool)
 	if ch.AllowedGroups != "" { for _, g := range splitComma(ch.AllowedGroups) { groups[g] = true } }
+
+	// Load upstream group IDs from join table
+	var ugLinks []model.UpstreamGroupChannel
+	model.DB.Where("channel_id = ?", ch.ID).Find(&ugLinks)
+	ugIDs := make([]uint, 0, len(ugLinks))
+	for _, link := range ugLinks {
+		ugIDs = append(ugIDs, link.UpstreamGroupID)
+	}
+
 	return &ChannelInfo{
 		ID: ch.ID, Name: ch.Name, Type: ch.Type, BaseURL: ch.BaseURL, APIKey: ch.APIKey,
 		Models: models, ModelMapping: mapping, AllowedGroups: groups,
 		Weight: ch.Weight, Priority: ch.Priority, AutoBan: ch.AutoBan,
-		FailCount: ch.FailCount, Enabled: ch.Enabled,
+		FailCount: func() atomic.Int32 { var a atomic.Int32; a.Store(int32(ch.FailCount)); return a }(), Enabled: ch.Enabled,
+		UpstreamGroupIDs: ugIDs,
 	}
 }
 

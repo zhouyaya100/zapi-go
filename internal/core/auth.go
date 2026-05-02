@@ -84,4 +84,24 @@ func RecordLoginFailure(key string) {
 
 func RecordLoginSuccess(key string) { loginAttemptsMu.Lock(); delete(loginAttempts, key); loginAttemptsMu.Unlock() }
 
+func init() {
+	go func() {
+		for {
+			time.Sleep(5 * time.Minute)
+			loginAttemptsMu.Lock()
+			now := time.Now()
+			for k, v := range loginAttempts {
+				// Clean locked entries past their lock time
+				if v.Attempts >= 5 && now.After(v.LockedUntil) {
+					delete(loginAttempts, k)
+				// Clean entries older than 30 minutes regardless of attempt count
+				} else if now.Sub(v.LockedUntil.Add(5*time.Minute)) > 25*time.Minute || (v.LockedUntil.IsZero() && v.Attempts > 0 && len(loginAttempts) > 1000) {
+					delete(loginAttempts, k)
+				}
+			}
+			loginAttemptsMu.Unlock()
+		}
+	}()
+}
+
 func IsAdminToken(token string) bool { return subtle.ConstantTimeCompare([]byte(token), []byte(config.Cfg.Security.AdminToken)) == 1 }

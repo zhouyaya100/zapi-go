@@ -26,7 +26,9 @@ cache:
 rate_limit:
     enabled: true
     rpm: 1000
+    tpm: 1000000
     ip_rpm: 2000
+    ip_tpm: 2000000
 log:
     batch_size: 50
     batch_interval: 5
@@ -43,7 +45,6 @@ registration:
     min_password_length: 8
 heartbeat:
     enabled: true
-    auto_disable: true
     interval: 60
     timeout: 10
     retries: 3

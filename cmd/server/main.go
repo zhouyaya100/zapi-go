@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
-	"os"
+	"net/http"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zapi/zapi-go/internal/config"
@@ -22,7 +24,9 @@ func main() {
 	if err := config.Load("config.yaml"); err != nil {
 		log.Fatal("配置加载失败: ", err)
 	}
-	core.InitDB()
+	if err := core.InitDB(); err != nil {
+		log.Fatal("数据库初始化失败: ", err)
+	}
 	core.SeedDefaults()
 
 	// Initialize routing pool from DB channels
@@ -32,12 +36,20 @@ func main() {
 		routing.Pool.UpdateChannel(&channels[i])
 	}
 
+	// Initialize upstream groups from DB
+	var upstreamGroups []model.UpstreamGroup
+	model.DB.Find(&upstreamGroups)
+	var channelGroups []model.UpstreamGroupChannel
+	model.DB.Find(&channelGroups)
+	routing.LoadUpstreams(upstreamGroups, channelGroups)
+
 	// Start background services
 	core.StartLogWriter()
 	core.StartLogCleanup()
 	core.StartHeartbeat()
 	ratelimit.Init()
 	core.StartQuotaDeductor()
+	core.StartChannelUpdateWriter()
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -45,11 +57,24 @@ func main() {
 	r.Use(middleware.CORS())
 	r.Use(middleware.BodyLimit())
 
-	// Static files
+	// Static files — no-cache to ensure fresh SPA assets
+	r.Use(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/static/assets/") {
+			c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+			c.Header("Pragma", "no-cache")
+			c.Header("Expires", "0")
+		}
+		c.Next()
+	})
 	r.Static("/static", "./static")
 	r.GET("/", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 		c.File("./static/index.html")
 	})
+
+	// IMPORTANT: register refresh route BEFORE any groups are created
+	// Gin has a bug where r.POST() silently fails after r.Group() is called
+	r.POST("/api/auth/refresh", middleware.RequireAuth(), handler.HandleRefreshToken)
 
 	// Auth routes (prefix /api/auth — matches Python version)
 	authGrp := r.Group("/api/auth")
@@ -82,6 +107,7 @@ func main() {
 		myGrp.GET("/models", handler.HandleMyModels)
 		myGrp.GET("/dashboard", handler.HandleMyDashboard)
 		myGrp.GET("/usage", handler.HandleMyUsage)
+		myGrp.GET("/logs", handler.HandleMyLogs)
 	}
 
 	// Notification routes for logged-in users
@@ -103,6 +129,15 @@ func main() {
 		apiAdmin.PUT("/channels/:id", handler.HandleUpdateChannel)
 		apiAdmin.DELETE("/channels/:id", handler.HandleDeleteChannel)
 		apiAdmin.POST("/channels/:id/test", handler.HandleTestChannel)
+		apiAdmin.GET("/upstream-groups", handler.HandleListUpstreamGroups)
+		apiAdmin.POST("/upstream-groups", handler.HandleCreateUpstreamGroup)
+		apiAdmin.GET("/upstream-groups/:id", handler.HandleGetUpstreamGroup)
+		apiAdmin.PUT("/upstream-groups/:id", handler.HandleUpdateUpstreamGroup)
+		apiAdmin.DELETE("/upstream-groups/:id", handler.HandleDeleteUpstreamGroup)
+		apiAdmin.POST("/upstream-groups/:id/channels", handler.HandleAddChannelToGroup)
+		apiAdmin.DELETE("/upstream-groups/:id/channels/:channel_id", handler.HandleRemoveChannelFromGroup)
+		apiAdmin.GET("/lb/status", handler.HandleLBStatus)
+		apiAdmin.POST("/lb/reset-circuit/:channel_id", handler.HandleResetCircuit)
 		apiAdmin.GET("/users", handler.HandleListUsers)
 		apiAdmin.PUT("/users/:id", handler.HandleUpdateUser)
 		apiAdmin.DELETE("/users/:id", handler.HandleDeleteUser)
@@ -175,29 +210,46 @@ func main() {
 	r.Any("/v1/realtime", handler.HandleProxy)
 	r.GET("/v1/models", handler.HandleListModels)
 
-	// Catch-all for other /v1/* paths
+	// Catch-all for other /v1/* paths and SPA fallback
 	r.NoRoute(func(c *gin.Context) {
 		if strings.HasPrefix(c.Request.URL.Path, "/v1/") {
 			handler.HandleProxy(c)
+			return
+		}
+		// SPA fallback: non-API, non-static paths serve index.html
+		if !strings.HasPrefix(c.Request.URL.Path, "/api/") &&
+			!strings.HasPrefix(c.Request.URL.Path, "/static/") {
+			c.File("./static/index.html")
 			return
 		}
 		c.JSON(404, gin.H{"error": gin.H{"message": "\u8def\u7531\u4e0d\u5b58\u5728"}})
 	})
 
 	addr := fmt.Sprintf(":%d", config.Cfg.Server.Port)
-	fmt.Printf("Zapi-Go v4.0.2 starting on %s\n", addr)
+	fmt.Printf("Zapi-Go v4.2.1 starting on %s\n", addr)
 
 	// Graceful shutdown on SIGINT/SIGTERM
+	srv := &http.Server{Addr: addr, Handler: r}
 	signal.Notify(core.StopChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-core.StopChan
 		fmt.Println("\nShutting down...")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			fmt.Printf("Server shutdown error: %v\n", err)
+		}
 		core.ErrLog.Close()
-		// StopChan already signals background goroutines
-		os.Exit(0)
 	}()
 
-	if err := r.Run(addr); err != nil {
+	// Gin v1.10.0 workaround: iterating and printing routes forces radix-tree finalization.
+	for _, route := range r.Routes() {
+		if route.Method == "POST" {
+			fmt.Printf("[ROUTE] %s %s\n", route.Method, route.Path)
+		}
+	}
+
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
 }

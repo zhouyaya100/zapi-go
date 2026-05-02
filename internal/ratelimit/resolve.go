@@ -19,8 +19,9 @@ type ResolvedRateLimits struct {
 
 // ModelLimitEntry represents per-model rate limits
 type ModelLimitEntry struct {
-	RPM int   `json:"rpm"`
-	TPM int64 `json:"tpm"`
+	RPM     int   `json:"rpm"`     // 0 = inherit from parent, -1 = unlimited, >0 = limit
+	TPM     int64 `json:"tpm"`     // 0 = inherit from parent, -1 = unlimited, >0 = limit
+	Blocked bool  `json:"blocked"` // true = explicitly block this model
 }
 
 // ResolveRateLimits determines the effective rate limits for a user
@@ -63,22 +64,24 @@ func ResolveRateLimits(user *model.User) ResolvedRateLimits {
 		if user.ModelRateLimits != "" {
 			json.Unmarshal([]byte(user.ModelRateLimits), &result.ModelLimits)
 		}
-		// Get default from wildcard, otherwise unlimited for non-specified models
+		// per_model: only explicitly configured models are accessible
+		// "*" wildcard sets the default for unlisted models
+		// If no "*", unlisted models are BLOCKED (RPM=0/TPM=0)
 		if e, ok := result.ModelLimits["*"]; ok {
 			result.RPM = e.RPM
 			result.TPM = e.TPM
 		} else {
-			result.RPM = -1
-			result.TPM = -1
+			result.RPM = 0
+			result.TPM = 0
 		}
-	default: // "inherit"
-		result.EffectiveMode = "inherit"
-		if grp != nil {
-			switch grp.RateMode {
-			case "global":
-				result.RPM = grp.RPM
-				result.TPM = grp.TPM
-				result.EffectiveMode = "inherit_global"
+		default: // "inherit"
+			result.EffectiveMode = "inherit"
+			if grp != nil {
+				switch grp.RateMode {
+				case "global":
+					result.RPM = grp.RPM
+					result.TPM = grp.TPM
+					result.EffectiveMode = "inherit_global"
 			case "per_model":
 				if grp.ModelRateLimits != "" {
 					json.Unmarshal([]byte(grp.ModelRateLimits), &result.ModelLimits)
@@ -88,11 +91,24 @@ func ResolveRateLimits(user *model.User) ResolvedRateLimits {
 					result.RPM = e.RPM
 					result.TPM = e.TPM
 				} else {
-					result.RPM = -1
-					result.TPM = -1
+					result.RPM = 0
+					result.TPM = 0
+				}
+				default:
+					// Unknown group rate_mode: fall back to group RPM/TPM if set, otherwise unlimited
+					if grp.RPM > 0 {
+						result.RPM = grp.RPM
+					} else {
+						result.RPM = -1
+					}
+					if grp.TPM > 0 {
+						result.TPM = grp.TPM
+					} else {
+						result.TPM = -1
+					}
+					result.EffectiveMode = "inherit_fallback"
 				}
 			}
-		}
 	}
 
 	return result
@@ -109,10 +125,10 @@ func (r *ResolvedRateLimits) ResolveModelLimit(modelName string) (int, int64) {
 	return r.RPM, r.TPM
 }
 
-// CheckModelRateLimit checks if a specific model is blocked (RPM=0 or TPM=0 in model limits)
+// CheckModelRateLimit checks if a specific model is explicitly blocked
 func (r *ResolvedRateLimits) IsModelBlocked(modelName string) bool {
 	if e, ok := r.ModelLimits[modelName]; ok {
-		return e.RPM == 0 || e.TPM == 0
+		return e.Blocked
 	}
 	return false
 }

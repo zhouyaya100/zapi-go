@@ -40,6 +40,73 @@ var Migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version: "4.2.0",
+		Up: func(db *gorm.DB) error {
+			log.Println("[MIGRATE] 4.2.0: Adding upstream group columns and table...")
+			db.Exec("ALTER TABLE channels ADD COLUMN IF NOT EXISTS upstream_group_id INTEGER DEFAULT NULL")
+			// backup column was removed in v4.2.0 — drop if exists
+			db.Exec("ALTER TABLE channels DROP COLUMN IF EXISTS backup")
+			return nil
+		},
+	},
+	{
+		Version: "4.3.0",
+		Up: func(db *gorm.DB) error {
+			log.Println("[MIGRATE] 4.3.0: Many-to-many upstream_group_channels + migrate data...")
+			// Create join table
+			db.Exec(`CREATE TABLE IF NOT EXISTS upstream_group_channels (
+				upstream_group_id INTEGER NOT NULL,
+				channel_id INTEGER NOT NULL,
+				PRIMARY KEY (upstream_group_id, channel_id)
+			)`)
+			// Migrate old data: channels.upstream_group_id → upstream_group_channels rows
+			db.Exec(`INSERT INTO upstream_group_channels (upstream_group_id, channel_id)
+				SELECT upstream_group_id, id FROM channels
+				WHERE upstream_group_id IS NOT NULL
+				ON CONFLICT DO NOTHING`)
+			// Drop old column (keep for safety, no data loss)
+			// db.Exec("ALTER TABLE channels DROP COLUMN IF EXISTS upstream_group_id")
+			return nil
+		},
+	},
+	{
+		Version: "4.4.0",
+		Up: func(db *gorm.DB) error {
+			log.Println("[MIGRATE] 4.4.0: Adding upstream_group_id to users...")
+			db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS upstream_group_id INTEGER DEFAULT NULL")
+			return nil
+		},
+	},
+	{
+		Version: "4.5.0",
+		Up: func(db *gorm.DB) error {
+			log.Println("[MIGRATE] 4.5.0: User upstream groups many-to-many...")
+			// Create join table
+			db.Exec(`CREATE TABLE IF NOT EXISTS user_upstream_groups (
+				user_id INTEGER NOT NULL,
+				upstream_group_id INTEGER NOT NULL,
+				PRIMARY KEY (user_id, upstream_group_id)
+			)`)
+			// Migrate old data: users.upstream_group_id → user_upstream_groups rows
+			db.Exec(`INSERT INTO user_upstream_groups (user_id, upstream_group_id)
+				SELECT id, upstream_group_id FROM users
+				WHERE upstream_group_id IS NOT NULL AND upstream_group_id != 0
+				ON CONFLICT DO NOTHING`)
+			// Drop old column (SQLite doesn't support DROP COLUMN before 3.35.0, so keep it)
+			// db.Exec("ALTER TABLE users DROP COLUMN IF EXISTS upstream_group_id")
+			return nil
+		},
+	},
+	{
+		Version: "4.6.0",
+		Up: func(db *gorm.DB) error {
+			log.Println("[MIGRATE] 4.6.0: Adding upstream_group_id to logs...")
+			db.Exec("ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_group_id INTEGER DEFAULT 0")
+			db.Exec("CREATE INDEX IF NOT EXISTS idx_logs_upstream_group_id ON logs(upstream_group_id)")
+			return nil
+		},
+	},
 }
 
 // schemaMigrations tracks applied migrations
