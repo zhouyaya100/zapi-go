@@ -224,6 +224,27 @@ func (h *HealthTracker) ResetCircuit(id uint) {
 	ch.FailCount.Store(0)
 }
 
+// SyncFromHeartbeat — sync heartbeat failure state into the circuit breaker.
+// Unlike RecordFailure, this does NOT increment FailCount — it sets it directly
+// from the DB value and trips the circuit if needed. This prevents double-counting
+// since heartbeat.go already incremented the DB FailCount before calling this.
+func (h *HealthTracker) SyncFromHeartbeat(id uint, failCount int, maxFails int, failTimeout int) {
+	ch := h.Get(id)
+	ch.FailCount.Store(int64(failCount))
+	if failCount > 0 {
+		ch.LastFailTime.Store(time.Now().Unix())
+	}
+	// Trip circuit breaker if fail count reaches threshold
+	state := CircuitState(ch.CircuitState.Load())
+	if state == CircuitClosed && maxFails > 0 && failCount >= maxFails {
+		ch.CircuitState.CompareAndSwap(int32(CircuitClosed), int32(CircuitOpen))
+	}
+	// If half-open and still failing, re-open
+	if state == CircuitHalfOpen && failCount > 0 {
+		ch.CircuitState.CompareAndSwap(int32(CircuitHalfOpen), int32(CircuitOpen))
+	}
+}
+
 // GetStats — get global health stats for a channel
 func (h *HealthTracker) GetStats(id uint) (totalReqs, totalFails, avgLatency int64, failCount int64, state CircuitState) {
 	ch := h.Get(id)

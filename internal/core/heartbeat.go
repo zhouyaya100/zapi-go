@@ -73,14 +73,17 @@ func checkAllChannels() {
 		start := time.Now(); resp, err := client.Do(req); latency := int(time.Since(start).Milliseconds())
 		now := time.Now().UTC(); ch.TestTime = &now
 
-		if err != nil {
-			// Connection failed — this is a real failure (DNS, connection refused, etc.)
-			ch.FailCount++; ch.ResponseTime = 0
-			if ch.AutoBan && ch.FailCount >= 5 { ch.Enabled = false }
-			model.DB.Save(ch); routing.Pool.UpdateChannel(ch)
-			handleChannelFault(ch, adminIDs)
-			continue
-		}
+	if err != nil {
+		// Connection failed — this is a real failure (DNS, connection refused, etc.)
+		ch.FailCount++; ch.ResponseTime = 0
+		if ch.AutoBan && ch.FailCount >= 5 { ch.Enabled = false }
+		model.DB.Save(ch); routing.Pool.UpdateChannel(ch)
+		// Sync heartbeat failure to circuit breaker so IsAvailable() can skip this channel
+		mf, ft := routing.Upstreams.GetMaxFailsForChannel(ch.ID)
+		routing.Health.SyncFromHeartbeat(ch.ID, ch.FailCount, mf, ft)
+		handleChannelFault(ch, adminIDs)
+		continue
+	}
 		resp.Body.Close(); ch.ResponseTime = latency
 
 		if resp.StatusCode < 500 {
@@ -99,6 +102,9 @@ func checkAllChannels() {
 			ch.FailCount++
 			if ch.AutoBan && ch.FailCount >= 5 { ch.Enabled = false }
 			model.DB.Save(ch); routing.Pool.UpdateChannel(ch)
+			// Sync heartbeat failure to circuit breaker
+			mf, ft := routing.Upstreams.GetMaxFailsForChannel(ch.ID)
+			routing.Health.SyncFromHeartbeat(ch.ID, ch.FailCount, mf, ft)
 			handleChannelFault(ch, adminIDs)
 		}
 	}

@@ -28,6 +28,8 @@ func HandleLBStatus(c *gin.Context) {
 		FailCount      int64  `json:"fail_count"`
 		Circuit        string `json:"circuit"`
 		Shared         bool   `json:"shared"`
+		ResponseTime   int    `json:"response_time"`  // heartbeat response time (ms)
+		HeartFailCount int    `json:"heart_fail_count"` // heartbeat fail count from DB
 	}
 
 	type groupStatus struct {
@@ -70,12 +72,14 @@ func HandleLBStatus(c *gin.Context) {
 			globalTotalReqs, globalTotalFails, avgLatency, failCount, circuitState := routing.Health.GetStats(ch.ID)
 			groupTotalReqs, groupTotalFails := routing.Health.GetGroupChannelStats(ch.ID, ug.ID)
 
-			status := "healthy"
-			if !ch.Enabled {
-				status = "disabled"
-			} else if failCount > 0 {
-				status = "unhealthy"
-			}
+		status := "healthy"
+		if !ch.Enabled {
+			status = "disabled"
+		} else if ch.FailCount > 0 {
+			status = "unhealthy"
+		} else if failCount > 0 {
+			status = "unhealthy"
+		}
 
 			successRate := "100.0%"
 			if groupTotalReqs > 0 {
@@ -110,6 +114,8 @@ func HandleLBStatus(c *gin.Context) {
 				FailCount:      failCount,
 				Circuit:        routing.CircuitStateString(circuitState),
 				Shared:         channelGroupCount[ch.ID] > 1,
+				ResponseTime:   ch.ResponseTime,
+				HeartFailCount: ch.FailCount,
 			})
 		}
 

@@ -214,7 +214,7 @@ func GetUpstreamGroupChannelIDs() map[uint]bool {
 
 // splitComma is defined in pool.go — re-export not needed, same package
 
-// GetAllGroups — returns all upstream group infos (for LB status API)
+// GetAllGroups — get all upstream group infos
 func (idx *UpstreamIndex) GetAllGroups() []*UpstreamGroupInfo {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -223,6 +223,30 @@ func (idx *UpstreamIndex) GetAllGroups() []*UpstreamGroupInfo {
 		result = append(result, ug)
 	}
 	return result
+}
+
+// GetMaxFailsForChannel — find the strictest (smallest) max_fails and fail_timeout
+// across all upstream groups that contain this channel.
+// Returns (maxFails, failTimeout); defaults to (5, 30) if channel is not in any group.
+func (idx *UpstreamIndex) GetMaxFailsForChannel(channelID uint) (maxFails int, failTimeout int) {
+	maxFails = 5  // default
+	failTimeout = 30 // default
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	for _, ug := range idx.groups {
+		for _, cid := range ug.ChannelIDs {
+			if cid == channelID {
+				if ug.MaxFails > 0 && (maxFails == 5 || ug.MaxFails < maxFails) {
+					maxFails = ug.MaxFails
+				}
+				if ug.FailTimeout > 0 && (failTimeout == 30 || ug.FailTimeout < failTimeout) {
+					failTimeout = ug.FailTimeout
+				}
+				break // found in this group, check next group
+			}
+		}
+	}
+	return
 }
 
 // ParseAllowedGroups — helper for handler

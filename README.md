@@ -83,17 +83,32 @@ cp config.yaml myconfig.yaml
 | `heartbeat.interval` | 60 | 检测间隔(秒) |
 | `heartbeat.timeout` | 10 | 检测超时(秒) |
 
-## 轻量级心跳 (v4.3.0)
+## 轻量级心跳 (v4.3.0+)
 
 心跳检测使用 `GET /v1/models` 而非 `POST /v1/chat/completions`，只测服务器连通性，不算力：
 
 | 响应 | 判定 |
 |------|------|
-| 连接失败（DNS/连接拒绝） | 真正故障，FailCount+1，可能触发自动禁用 |
-| 5xx | 服务器不健康，FailCount+1 |
-| 其他（200/401/403/404/429等） | 服务器存活，FailCount清零 |
+| 连接失败（DNS/连接拒绝） | 真正故障，FailCount+1，同步到熔断器，可能触发自动禁用 |
+| 5xx | 服务器不健康，FailCount+1，同步到熔断器 |
+| 其他（200/401/403/404/429等） | 服务器存活，FailCount清零，熔断器恢复 |
 
 GPU满负荷时 /v1/models 秒回，不会被误判为故障。
+
+### 心跳-熔断联动 (v4.4.0)
+
+心跳检测到故障后调用 `SyncFromHeartbeat` 同步到熔断器：
+
+| 熔断状态 | 条件 | 行为 |
+|----------|------|------|
+| Closed→Open | FailCount >= max_fails | 渠道被`IsAvailable()`过滤，路由时自动跳过 |
+| Open→HalfOpen | 等待fail_timeout（默认30秒） | 放行一次探测请求 |
+| HalfOpen→Closed | 探测成功 | FailCount清零，恢复正常路由 |
+| HalfOpen→Open | 探测失败 | 回到熔断状态 |
+
+- `SyncFromHeartbeat`直接设置FailCount（不+1），避免心跳和代理双重计数
+- auto_ban=OFF时熔断仍生效（仅控制永久禁用，不控制临时跳过）
+- max_fails/fail_timeout取渠道所属上游组中最严格的值，未配置时默认(5, 30)
 
 ## 代理超时不算故障 (v4.3.0)
 
@@ -274,9 +289,28 @@ tail -f zapi.log # 查看日志
 
 ## 版本
 
-v4.3.0
+v4.4.0
 
 ## 变更日志
+
+### v4.4.0 (2026-05-03)
+
+**新功能**
+- 心跳熔断联动：心跳检测发现故障后同步到熔断器（`SyncFromHeartbeat`），故障渠道被`IsAvailable()`过滤，路由时自动跳过
+- 渠道故障可视化：渠道卡片显示⚠️故障标签+橙色脉冲边框+失败次数；上游组显示💓心跳延迟列和不健康状态
+- `GetMaxFailsForChannel`：渠道属于多个上游组时取最严格的max_fails/fail_timeout；未配置或不在任何组中时默认(5, 30)
+
+**改进**
+- auto_ban=OFF时熔断仍生效：auto_ban仅控制永久禁用，不控制临时熔断跳过（30秒半开探测自动恢复）
+- max_fails=0不再导致永不熔断：未配置时默认5次触发熔断
+- `handleChannelFail`改用`GetMaxFailsForChannel`获取最严格参数，修复之前永远取`UpstreamGroupIDs[0]`的bug
+- 心跳故障同步不重复计数：`SyncFromHeartbeat`直接设置FailCount（不+1），避免心跳和代理双重计数
+- 上游组状态判定增强：`lb_status.go`检查`FailCount > 0`即为不健康，新增`response_time`和`heart_fail_count`字段
+
+**前端**
+- 暗色主题全量修复：20+组件硬编码色值→CSS变量(`var(--n-xxx)`)，删除fallback泄漏，Login/Register/Guide等页面暗色适配
+- StatsCard/UsageChart暗色适配
+- SideNav暗色适配
 
 ### v4.3.0 (2026-05-02)
 

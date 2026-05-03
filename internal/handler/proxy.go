@@ -214,14 +214,9 @@ func handleChannelFail(sel *routing.ChannelInfo, errMsg string, groupID ...uint)
 	newFailCount := routing.Pool.IncrementFailCount(sel.ID)
 	// Record health for circuit breaker
 	var ugMaxFails, ugFailTimeout int
-	if len(sel.UpstreamGroupIDs) > 0 {
-		// Use the first upstream group's settings for circuit breaker thresholds
-		ug := routing.Upstreams.GetUpstreamInfo(sel.UpstreamGroupIDs[0])
-		if ug != nil {
-			ugMaxFails = ug.MaxFails
-			ugFailTimeout = ug.FailTimeout
-		}
-	}
+	mf, ft := routing.Upstreams.GetMaxFailsForChannel(sel.ID)
+	ugMaxFails = mf
+	ugFailTimeout = ft
 	routing.Health.RecordFailure(sel.ID, ugMaxFails, ugFailTimeout, groupID...)
 	// Decrement active request counter
 	routing.LB.DecrRequest(sel.ID)
