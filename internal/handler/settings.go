@@ -23,6 +23,8 @@ var yamlMap = map[string][2]string{
 	"proxy_max_keepalive":      {"proxy", "max_keepalive"},
 	"proxy_keepalive_expiry":   {"proxy", "keepalive_expiry"},
 	"proxy_retry_count":        {"proxy", "retry_count"},
+	"proxy_max_fails":          {"proxy", "max_fails"},
+	"proxy_fail_timeout":       {"proxy", "fail_timeout"},
 	"cache_enabled":            {"cache", "enabled"},
 	"cache_ttl":                {"cache", "ttl"},
 	"cache_max_entries":        {"cache", "max_entries"},
@@ -77,6 +79,8 @@ func HandleGetSettings(c *gin.Context) {
 		"proxy_max_keepalive":        config.Cfg.Proxy.MaxKeepalive,
 		"proxy_keepalive_expiry":     config.Cfg.Proxy.KeepaliveExpiry,
 		"proxy_retry_count":          config.Cfg.Proxy.RetryCount,
+		"proxy_max_fails":            config.Cfg.Proxy.MaxFails,
+		"proxy_fail_timeout":         config.Cfg.Proxy.FailTimeout,
 		"cache_enabled":              config.Cfg.Cache.Enabled,
 		"cache_ttl":                  config.Cfg.Cache.TTL,
 		"cache_max_entries":          config.Cfg.Cache.MaxEntries,
@@ -140,7 +144,13 @@ func HandleUpdateSettings(c *gin.Context) {
 		if f, ok := v.(float64); ok && int(f) < 100 { c.JSON(400, gin.H{"error": gin.H{"message": "\u9519\u8bef\u65e5\u5fd7\u6700\u5927\u6761\u6570\u81f3\u5c11 100"}}); return }
 	}
 	if v, ok := req["error_log_max_days"]; ok {
-		if f, ok := v.(float64); ok && int(f) < 1 { c.JSON(400, gin.H{"error": gin.H{"message": "\u65e5\u5fd7\u4fdd\u7559\u5929\u6570\u81f3\u5c11 1"}}); return }
+		if f, ok := v.(float64); ok && int(f) < 1 { c.JSON(400, gin.H{"error": gin.H{"message": "日志保留天数至少 1 天"}}); return }
+	}
+	if v, ok := req["proxy_max_fails"]; ok {
+		if f, ok := v.(float64); ok && int(f) < 0 { c.JSON(400, gin.H{"error": gin.H{"message": "熔断阈值不能为负数"}}); return }
+	}
+	if v, ok := req["proxy_fail_timeout"]; ok {
+		if f, ok := v.(float64); ok && int(f) < 1 { c.JSON(400, gin.H{"error": gin.H{"message": "熔断恢复时间至少 1 秒"}}); return }
 	}
 	// Update config in memory
 	for key, val := range req {
@@ -163,6 +173,10 @@ func HandleUpdateSettings(c *gin.Context) {
 			if v, ok := val.(float64); ok { config.Cfg.Proxy.KeepaliveExpiry = int(v) }
 		case "proxy_retry_count":
 			if v, ok := val.(float64); ok { config.Cfg.Proxy.RetryCount = int(v) }
+		case "proxy_max_fails":
+			if v, ok := val.(float64); ok { config.Cfg.Proxy.MaxFails = int(v) }
+		case "proxy_fail_timeout":
+			if v, ok := val.(float64); ok { config.Cfg.Proxy.FailTimeout = int(v) }
 		case "cache_enabled":
 			if v, ok := val.(bool); ok { config.Cfg.Cache.Enabled = v }
 		case "cache_ttl":

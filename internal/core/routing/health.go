@@ -135,27 +135,6 @@ func (h *HealthTracker) RecordSuccess(id uint, latencyMs int, groupID ...uint) {
 	}
 }
 
-// RecordTimeout — called after a proxy request timeout
-// Unlike RecordFailure, timeout does NOT increment FailCount or trigger circuit breaker.
-// It only records the request and latency — upstream is slow but not necessarily down.
-func (h *HealthTracker) RecordTimeout(id uint, latencyMs int, groupID ...uint) {
-	ch := h.Get(id)
-	ch.TotalReqs.Add(1)
-	ch.TotalLatency.Add(int64(latencyMs))
-	// Intentionally: no FailCount increment, no circuit state change
-
-	// Per-group tracking
-	if len(groupID) > 0 && groupID[0] > 0 {
-		gs := ch.getGroupStats(groupID[0])
-		gs.TotalReqs.Add(1)
-		// No TotalFails increment for timeout
-		gh := h.getGroupHealth(groupID[0])
-		if gh != nil {
-			gh.TotalReqs.Add(1)
-		}
-	}
-}
-
 // RecordFailure — called after a failed proxy request (real failure: connection refused, DNS, 5xx)
 func (h *HealthTracker) RecordFailure(id uint, maxFails int, failTimeout int, groupID ...uint) CircuitState {
 	ch := h.Get(id)

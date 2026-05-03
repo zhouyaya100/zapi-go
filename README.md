@@ -25,7 +25,9 @@ internal/
 │   └── routing/
 │       ├── engine.go        # 模型映射/URL构建
 │       ├── policy.go        # 路由策略枚举
-│       └── pool.go          # 倒排索引渠道池 (O(1)查找+预排序)
+│       ├── health.go        # 熔断器（三态：Closed/Open/Half-Open）+ 渠道健康追踪
+│       ├── upstream.go      # 上游组索引 + 别名映射 + GetMaxFailsForChannel
+│       └── pool.go          # 倒排索引渠道池 (O(1)查找+预排序+IsAvailable熔断过滤)
 ├── handler/
 │   ├── auth.go              # 登录/注册/验证码/改密码/获取用户信息
 │   ├── channel.go           # 渠道CRUD+测试 (含AutoDisable检查+测试成功恢复启用)
@@ -74,6 +76,8 @@ cp config.yaml myconfig.yaml
 | `security.jwt_expire_hours` | 1 | JWT过期时间 |
 | `proxy.timeout` | 120 | 上游超时(秒) |
 | `proxy.retry_count` | 1 | 重试次数 |
+| `proxy.max_fails` | 5 | 熔断阈值（连续失败N次触发熔断，0=禁用） |
+| `proxy.fail_timeout` | 30 | 熔断恢复时间(秒) |
 | `rate_limit.rpm` | 60 | 每API Key每分钟请求数 |
 | `rate_limit.ip_rpm` | 120 | 每IP每分钟请求数 |
 | `log.error_max_entries` | 10000 | 错误日志内存缓冲条数 |
@@ -110,17 +114,18 @@ GPU满负荷时 /v1/models 秒回，不会被误判为故障。
 - auto_ban=OFF时熔断仍生效（仅控制永久禁用，不控制临时跳过）
 - max_fails/fail_timeout取渠道所属上游组中最严格的值，未配置时默认(5, 30)
 
-## 代理超时不算故障 (v4.3.0)
+## 代理超时处理 (v4.5.0)
 
-代理请求超时（context deadline）只代表上游慢，不代表上游挂了：
+代理请求超时（context deadline）的处理：
 
 | 错误类型 | 行为 |
 |----------|------|
-| 超时 | 不加FailCount，不触发熔断，不排除渠道，仅记日志和延迟 |
-| 连接拒绝/DNS失败 | 加FailCount，触发熔断，排除渠道重试 |
-| 上游5xx | 加FailCount，触发熔断，排除渠道重试 |
+| 超时 | 加FailCount，触发熔断，但不自动禁用渠道（慢≠坏） |
+| 连接拒绝/DNS失败 | 加FailCount，触发熔断，AutoBan时自动禁用渠道 |
+| 上游5xx | 加FailCount，触发熔断，AutoBan时自动禁用渠道 |
+| 客户端断开(context canceled) | 不计FailCount，不触发熔断，返回499 |
 
-GPU满负荷时：代理请求可能超时但渠道不会被禁用/熔断。
+GPU满负荷时：代理超时会触发熔断暂时摘除慢渠道，但不会永久禁用（AutoBan不触发）。熔断超时后自动半开探测恢复。
 
 ## 渠道故障自动禁用 (v4.0.x)
 
@@ -231,7 +236,7 @@ GET /api/users                       → [...]（无分页，向后兼容）
 | `checkQuotaAndRateLimit` | 令牌额度 + 用户状态 + 限流 + 模型权限 |
 | `buildUpstreamRequest` | 模型映射 + stream_options注入 + 请求构建 |
 | `handleChannelFail` | fail_count递增 + AutoDisable检查 + 路由池更新（仅真正故障调用） |
-| `handleChannelTimeout` | 仅记延迟和请求数，不触发熔断/禁用（超时调用） |
+| `handleChannelTimeout` | 超时处理：FailCount+1，触发熔断但不自动禁用渠道（慢≠坏） |
 | `handleChannelSuccess` | fail_count清零 + 路由池更新 |
 | `sanitizeUpstreamError` | 清洗上游错误（隐藏Python traceback等） |
 | `processStreamResponse` | SSE流式转发 + token计数 + TPM记账 + 配额扣减 |
@@ -289,9 +294,30 @@ tail -f zapi.log # 查看日志
 
 ## 版本
 
-v4.4.0
+v4.5.0
 
 ## 变更日志
+
+### v4.5.0 (2026-05-04)
+
+**新功能**
+- 渠道熔断机制（Circuit Breaker）：连续失败N次自动摘除渠道，fail_timeout秒后半开探测，成功则恢复
+- 三态熔断器：Closed（正常）→ Open（熔断，跳过渠道）→ Half-Open（半开，放1个试探请求）
+- 系统设置新增"熔断阈值"和"熔断恢复时间"配置项（proxy_max_fails / proxy_fail_timeout）
+- selectFromPool加入IsAvailable检查：不走上游组时熔断也生效（之前只有上游组路径有检查）
+- 超时计入熔断：代理超时触发FailCount递增+熔断判定（之前超时不算故障导致慢渠道永远摘不掉）
+- context canceled不算故障：客户端主动断开返回499，不计FailCount
+
+**改进**
+- AutoBan阈值与熔断阈值统一：AutoBan不再硬编码5次，改用MaxFails配置值
+- 设置API新增proxy_max_fails/proxy_fail_timeout后端验证：max_fails>=0, fail_timeout>=1
+- 上游组前端fail_timeout最小值从0改为1（0会导致熔断瞬间恢复无意义）
+- 删除未使用的RecordTimeout死代码
+- ResponseHeaderTimeout改为0（无限），完全靠proxy.timeout控制超时
+
+**前端**
+- 系统设置页面代理区域新增"熔断阈值"和"熔断恢复时间"输入框
+- 中英文翻译新增proxyMaxFails/proxyFailTimeout
 
 ### v4.4.0 (2026-05-03)
 

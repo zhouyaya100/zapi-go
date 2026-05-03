@@ -192,6 +192,9 @@ func (p *ChannelPool) selectFromPool(modelName string, group *string, excludeIDs
 			ch, ok := p.channels[cid]
 			if !ok || !ch.Enabled { continue }
 			if excludeIDs != nil && excludeIDs[cid] { continue }
+			// Check circuit breaker health (same as selectFromUpstreamGroup)
+			mf, ft := Upstreams.GetMaxFailsForChannel(cid)
+			if !Health.IsAvailable(cid, mf, ft) { continue }
 			if !(len(skipGroup) > 0 && skipGroup[0]) {
 				if group != nil {
 					gname := *group

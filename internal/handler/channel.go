@@ -173,7 +173,10 @@ func HandleTestChannel(c *gin.Context) {
 	latency := int(time.Since(start).Milliseconds())
 	if err != nil {
 		ch.FailCount++
-		if ch.AutoBan && ch.FailCount >= 5 {
+		mf, _ := routing.Upstreams.GetMaxFailsForChannel(ch.ID)
+		autoBanThreshold := mf
+		if autoBanThreshold <= 0 { autoBanThreshold = 5 }
+		if ch.AutoBan && ch.FailCount >= autoBanThreshold {
 			ch.Enabled = false
 		}
 		now := time.Now().UTC()
@@ -214,7 +217,10 @@ func HandleTestChannel(c *gin.Context) {
 		errorStr := string(errorBody); if len(errorStr) > 300 { errorStr = errorStr[:300] }
 		if ch.Enabled {
 			ch.FailCount++
-			if ch.AutoBan && ch.FailCount >= 5 { ch.Enabled = false }
+			mf, _ := routing.Upstreams.GetMaxFailsForChannel(ch.ID)
+			autoBanThreshold := mf
+			if autoBanThreshold <= 0 { autoBanThreshold = 5 }
+			if ch.AutoBan && ch.FailCount >= autoBanThreshold { ch.Enabled = false }
 		}
 		model.DB.Save(&ch)
 		routing.Pool.UpdateFailCount(ch.ID, ch.FailCount, ch.Enabled)

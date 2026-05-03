@@ -27,7 +27,7 @@ var sharedTransport = &http.Transport{
 		KeepAlive: 30 * time.Second,
 	}).DialContext,
 	TLSHandshakeTimeout:   10 * time.Second,
-	ResponseHeaderTimeout: 30 * time.Second,
+	ResponseHeaderTimeout: 0, // 0 = no limit; per-request timeout controlled by context (proxy.timeout)
 	MaxIdleConns:          1000,
 	MaxIdleConnsPerHost:   100,
 	MaxConnsPerHost:       0,
@@ -199,13 +199,19 @@ func buildUpstreamRequest(c *gin.Context, sel *routing.ChannelInfo, bodyBytes []
 	return req, nil
 }
 
-// handleChannelTimeout records a timeout without incrementing fail count or triggering circuit breaker.
-// Timeouts indicate upstream is slow, not necessarily down.
+// handleChannelTimeout records a timeout and increments fail count for circuit breaker,
+// but does NOT auto-disable the channel in DB. (Slow upstream ≠ broken upstream.)
+// The circuit breaker will temporarily block via IsAvailable() and auto-recover after fail_timeout.
 func handleChannelTimeout(sel *routing.ChannelInfo, latencyMs int, groupID ...uint) {
-	routing.Health.RecordTimeout(sel.ID, latencyMs, groupID...)
+	newFailCount := routing.Pool.IncrementFailCount(sel.ID)
+	// Record as failure for circuit breaker (trips circuit if max_fails reached)
+	mf, ft := routing.Upstreams.GetMaxFailsForChannel(sel.ID)
+	routing.Health.RecordFailure(sel.ID, mf, ft, groupID...)
 	routing.LB.DecrRequest(sel.ID)
-	// Do NOT: increment fail count, trigger auto-ban, or update DB fail_count
-	// The channel remains fully available for future requests
+	// Do NOT auto-disable in DB — timeout means slow, not broken
+	// Circuit breaker handles temporary exclusion; heartbeat handles recovery
+	routing.Pool.UpdateFailCount(sel.ID, newFailCount, true)
+	core.AsyncChannelUpdate(sel.ID, newFailCount, true)
 }
 
 // handleChannelFail increments fail count and auto-disables if threshold reached
@@ -222,7 +228,9 @@ func handleChannelFail(sel *routing.ChannelInfo, errMsg string, groupID ...uint)
 	routing.LB.DecrRequest(sel.ID)
 
 	newEnabled := true
-	if sel.AutoBan && int(sel.FailCount.Load()) >= 5 {
+	autoBanThreshold := ugMaxFails
+	if autoBanThreshold <= 0 { autoBanThreshold = 5 }
+	if sel.AutoBan && int(sel.FailCount.Load()) >= autoBanThreshold {
 		newEnabled = false
 		routing.Pool.UpdateFailCount(sel.ID, newFailCount, false)
 	} else {
@@ -611,6 +619,7 @@ func HandleProxy(c *gin.Context) {
 			errMsg := "上游服务错误"
 			errCode := "upstream_error"
 			isTimeout := false
+			isClientCancel := false
 
 			if cerr, ok := err.(net.Error); ok && cerr.Timeout() {
 				errMsg = "上游服务超时"
@@ -622,13 +631,26 @@ func HandleProxy(c *gin.Context) {
 			} else if strings.Contains(err.Error(), "no such host") || strings.Contains(err.Error(), "DNS") {
 				errMsg = "上游服务DNS解析失败"
 				errCode = "dns_error"
+			} else if strings.Contains(err.Error(), "context canceled") {
+				// Client disconnected — not a channel failure
+				isClientCancel = true
+			}
+
+			if isClientCancel {
+				// Client disconnected mid-request: not the channel's fault
+				routing.LB.DecrRequest(sel.ID)
+				core.ErrLog.Error(fmt.Sprintf("客户端断开: 用户%s 模型:%s 渠道[%s]", user.Username, modelName, sel.Name))
+				core.AddLog(model.Log{UserID: user.ID, TokenID: tk.ID, TokenName: tk.Name, ChannelID: sel.ID, ChannelName: sel.Name, UpstreamGroupID: selectedGroupID, Model: modelName, IsStream: isStream, LatencyMs: latency, Success: false, ErrorMsg: "客户端断开连接", ClientIP: clientIP})
+				// Don't count as failure, don't exclude channel, don't retry
+				proxyError(c, isStream, 499, "客户端断开连接", "client_error", "client_cancel")
+				return
 			}
 
 			if isTimeout {
-				// Timeout ≠ failure: upstream is slow, not down
-				// Don't increment fail_count, don't trigger circuit breaker, don't auto-ban
+				// Timeout counts for circuit breaker but doesn't auto-disable in DB
+				// (slow upstream ≠ broken upstream)
 				handleChannelTimeout(sel, latency, selectedGroupID)
-				core.ErrLog.Error(fmt.Sprintf("代理超时(不计故障): 用户%s 模型:%s 渠道[%s] 延迟:%dms", user.Username, modelName, sel.Name, latency))
+				core.ErrLog.Error(fmt.Sprintf("代理超时: 用户%s 模型:%s 渠道[%s] 延迟:%dms", user.Username, modelName, sel.Name, latency))
 			} else {
 				// Real failure: connection refused, DNS failure, etc.
 				handleChannelFail(sel, fmt.Sprintf("代理失败: 用户%s 模型:%s 渠道[%s] 错误:%s (%v)", user.Username, modelName, sel.Name, errMsg, err), selectedGroupID)
@@ -636,10 +658,8 @@ func HandleProxy(c *gin.Context) {
 
 			core.AddLog(model.Log{UserID: user.ID, TokenID: tk.ID, TokenName: tk.Name, ChannelID: sel.ID, ChannelName: sel.Name, UpstreamGroupID: selectedGroupID, Model: modelName, IsStream: isStream, LatencyMs: latency, Success: false, ErrorMsg: errMsg, ClientIP: clientIP})
 
-			if !isTimeout {
-				// Only exclude the channel from retry on real failures, not timeouts
-				excludeIDs[sel.ID] = true
-			}
+			// Both timeout and real failure: exclude channel from retry
+			excludeIDs[sel.ID] = true
 			if attempt < maxRetries { continue }
 			proxyError(c, isStream, 504, errMsg, errCode, "timeout")
 			return

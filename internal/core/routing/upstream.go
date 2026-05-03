@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/zapi/zapi-go/internal/config"
 	"github.com/zapi/zapi-go/internal/model"
 )
 
@@ -227,19 +228,26 @@ func (idx *UpstreamIndex) GetAllGroups() []*UpstreamGroupInfo {
 
 // GetMaxFailsForChannel — find the strictest (smallest) max_fails and fail_timeout
 // across all upstream groups that contain this channel.
-// Returns (maxFails, failTimeout); defaults to (5, 30) if channel is not in any group.
+// Returns (maxFails, failTimeout); uses global proxy config defaults if channel is not in any group.
 func (idx *UpstreamIndex) GetMaxFailsForChannel(channelID uint) (maxFails int, failTimeout int) {
-	maxFails = 5  // default
-	failTimeout = 30 // default
+	// Use global proxy config as defaults
+	maxFails = config.Cfg.Proxy.MaxFails
+	if maxFails <= 0 {
+		maxFails = 5
+	}
+	failTimeout = config.Cfg.Proxy.FailTimeout
+	if failTimeout <= 0 {
+		failTimeout = 30
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	for _, ug := range idx.groups {
 		for _, cid := range ug.ChannelIDs {
 			if cid == channelID {
-				if ug.MaxFails > 0 && (maxFails == 5 || ug.MaxFails < maxFails) {
+				if ug.MaxFails > 0 && ug.MaxFails < maxFails {
 					maxFails = ug.MaxFails
 				}
-				if ug.FailTimeout > 0 && (failTimeout == 30 || ug.FailTimeout < failTimeout) {
+				if ug.FailTimeout > 0 && ug.FailTimeout < failTimeout {
 					failTimeout = ug.FailTimeout
 				}
 				break // found in this group, check next group

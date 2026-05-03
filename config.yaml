@@ -19,6 +19,8 @@ proxy:
     max_keepalive: 100
     keepalive_expiry: 30
     retry_count: 1
+    max_fails: 5
+    fail_timeout: 30
 cache:
     enabled: true
     ttl: 30
