@@ -106,7 +106,6 @@ func HandleGetSettings(c *gin.Context) {
 		// Read-only fields
 		"server_host":               config.Cfg.Server.Host,
 		"server_port":               config.Cfg.Server.Port,
-		"server_workers":            config.Cfg.Server.Workers,
 		"database_url":              config.Cfg.Database.URL,
 		"db_pool_size":              config.Cfg.Database.PoolSize,
 		"db_max_overflow":           config.Cfg.Database.MaxOverflow,

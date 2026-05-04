@@ -226,7 +226,7 @@ func main() {
 	})
 
 	addr := fmt.Sprintf(":%d", config.Cfg.Server.Port)
-	fmt.Printf("Zapi-Go v4.5.0 starting on %s\n", addr)
+	fmt.Printf("Zapi-Go v4.5.8 starting on %s\n", addr)
 
 	// Graceful shutdown on SIGINT/SIGTERM
 	srv := &http.Server{Addr: addr, Handler: r}

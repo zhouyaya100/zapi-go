@@ -1,6 +1,6 @@
 # Zapi-Go 待优化清单
 
-> 审查时间：2026-05-02 (v4.3.0)，最后更新：v4.4.0，已完成的标记 ✅，其余待逐步修改
+> 审查时间：2026-05-02 (v4.3.0)，最后更新：v4.5.8，已完成的标记 ✅，其余待逐步修改
 
 ---
 
@@ -155,9 +155,9 @@
 - 修改代理超时、连接池大小等配置后，已创建的sharedTransport和http.Client不会更新
 - 建议：配置变更时重建Transport/Client，或文档说明哪些配置需重启生效
 
-### [低] 版本号硬编码多处 — cmd/server/main.go, handler/helpers.go, static/app.js
-- 4处硬编码，升级时容易遗漏
-- 建议：使用-ldflags编译时注入，前端从/api/version获取
+### [低] 版本号硬编码多处 — cmd/server/main.go, handler/helpers.go
+- ✅ 前端已从/api/version动态获取版本号（v4.5.x Vue3重写）
+- Go后端仍有2处硬编码（main.go启动日志、helpers.go版本API），可考虑ldflags方案
 
 ---
 
@@ -171,17 +171,16 @@
 - ~~所有页面模板堆叠在一个HTML文件中~~
 - ✅ 已迁移到Vue 3组件化架构
 
-### [中] 前端未处理JWT过期 — static/app.js:74-82
-- 收到401只设authError不自动跳转登录页，用户操作静默失败
-- 建议：401时自动清除token并跳转登录页
+### [中] 前端未处理JWT过期 — ✅ 已修复
+- ✅ 401时自动清除token并跳转登录页（v4.5.x Vue3重写时已实现）
 
 ### [中] API Key明文返回前端 — internal/handler/token.go:41
 - HandleListMyTokens返回完整key，若前端被XSS所有token泄露
 - 建议：只在创建时返回完整key，列表接口返回脱敏key
 
-### [中] XSS潜在风险 — 前端展示
-- 错误消息、模型名、渠道名等用户输入数据直接展示
-- 建议：全局审查确保无v-html渲染用户输入
+### [中] XSS潜在风险 — ✅ 已修复（Vue3自动转义）
+- ✅ Vue 3模板默认HTML转义，无v-html渲染用户输入
+- v4.5.8暗色主题全量修复，所有硬编码色值改为CSS变量
 
 ### [低] ~~前端未压缩~~ — ~~static/index.html, static/app.js~~
 - ~~HTML和JS未压缩，app.js 56KB可minify到约30KB~~
@@ -190,6 +189,15 @@
 ### [低] localStorage存储JWT — static/app.js:100
 - 容易被XSS窃取
 - 建议：改用HttpOnly cookie
+- 注：v4.5.x已迁移到Vue3，仍用localStorage存储JWT
+
+### v4.5.8 新增前端优化
+- ✅ 全新动态背景动画（ParticleNetwork.vue）：三层景深粒子+路由节点数据包+极光带+声纳脉冲+连线流光
+- ✅ 视差滚动效果：背景层随滚动不同速度偏移
+- ✅ 浅绿色系配色替换青蓝紫
+- ✅ 半透明UI + backdrop-filter:blur，动画透出但不遮挡
+- ✅ NaiveUI全局主题边框增强（暗色0.12/亮色0.14）
+- ✅ StatsCard/DataTable shadow增强，模块边缘更清晰
 
 ---
 

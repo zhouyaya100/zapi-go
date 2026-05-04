@@ -24,7 +24,6 @@ type Config struct {
 type ServerConfig struct {
 	Host           string `yaml:"host"`
 	Port           int    `yaml:"port"`
-	Workers        int    `yaml:"workers"`
 	TimezoneOffset int    `yaml:"timezone_offset"`
 }
 type DatabaseConfig struct {
@@ -92,7 +91,7 @@ func GetCfg() Config { cfgMu.RLock(); defer cfgMu.RUnlock(); return Cfg }
 func SetCfg(f func()) { cfgMu.Lock(); defer cfgMu.Unlock(); f() }
 
 var Cfg = Config{
-	Server:       ServerConfig{Host: "0.0.0.0", Port: 65000, Workers: 4, TimezoneOffset: 8},
+	Server:       ServerConfig{Host: "0.0.0.0", Port: 65000, TimezoneOffset: 8},
 	Database:     DatabaseConfig{URL: "sqlite:///zapi.db", PoolSize: 20, MaxOverflow: 10, PoolRecycle: 3600},
 	Security:     SecurityConfig{CORSOrigins: "*", JWTExpireHours: 24},
 	Proxy:        ProxyConfig{Timeout: 60, MaxConnections: 100, MaxKeepalive: 20, KeepaliveExpiry: 60, RetryCount: 1, MaxFails: 5, FailTimeout: 30},
