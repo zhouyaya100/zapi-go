@@ -26,7 +26,7 @@ func getUserOrAdmin(c *gin.Context) *model.User {
 }
 
 func HandleVersion(c *gin.Context) {
-	c.JSON(200, gin.H{"version": "4.5.8"})
+	c.JSON(200, gin.H{"version": "4.5.9"})
 }
 
 func HandleErrorLog(c *gin.Context) {
